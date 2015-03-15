@@ -12,6 +12,8 @@
 
 local ut = require "lluv.utils"
 
+local RedisCmdStream = ut.class() do
+
 local EOL  = "\r\n"
 local OK   = '+'
 local ERR  = '-'
@@ -21,8 +23,6 @@ local ARR  = '*'
 
 local CB, STATE, DATA = 1, 2, 3
 local I, N = 3, 1
-
-local RedisCmdStream = ut.class() do
 
 local function decode_line(line)
   local p, d = line:sub(1, 1), line:sub(2)
@@ -91,7 +91,7 @@ function RedisCmdStream:_decode_array(t)
 
       if typ == ARR then
         if n == -1 then
-          t[i], ctx[I] = n, i + 1
+          t[i], ctx[I] = nil, i + 1
         else
           ctx[STATE], t[i] = 'array', array_context(n, t)
         end

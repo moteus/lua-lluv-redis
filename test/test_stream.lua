@@ -361,6 +361,44 @@ it("halt should calls every callback", function()
   assert_true(called[3])
 end)
 
+it("should decode nil", function()
+  stream:on_command(PASS)
+
+  local res
+  stream:command("PING", function(self, err, data)
+    assert_nil(err)
+    res = data
+  end)
+
+  stream:append("*-1\r\n"):execute()
+
+  assert_nil(res)
+end)
+
+it("should decode arrays with holes", function()
+  stream:on_command(PASS)
+
+  local res
+  stream:command("PING", function(self, err, data)
+    assert_nil(err)
+    res = data
+  end)
+
+  local str = table.concat{
+    "*3\r\n",
+      ":1\r\n",
+      "*-1\r\n",
+      ":3\r\n",
+  }
+
+  stream:append(str):execute()
+
+  assert_table(res)
+  assert_equal(1,res[1])
+  assert_nil(res[2])
+  assert_equal(3,res[3])
+end)
+
 end -- test case
 
 RUN()
