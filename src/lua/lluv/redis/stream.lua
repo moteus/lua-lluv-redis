@@ -20,6 +20,7 @@ local BULK = '$'
 local ARR  = '*'
 
 local CB, STATE, DATA = 1, 2, 3
+local I, N = 3, 1
 
 local RedisCmdStream = ut.class() do
 
@@ -35,7 +36,7 @@ end
 
 local function array_context(n)
   return {
-    [0] = {n = n, i = 1, status = "line"}
+    [0] = {n, 'line', 1}
   }
 end
 
@@ -79,9 +80,9 @@ end
 function RedisCmdStream:_decode_array(t)
   local ctx = t[0]
 
-  while ctx.i <= ctx.n do
-    local i = ctx.i
-    if ctx.status == 'line' then
+  while ctx[I] <= ctx[N] do
+    local i = ctx[I]
+    if ctx[STATE] == 'line' then
       local line = self._buffer:read_line()
       if not line then return end
       local typ, n = decode_line(line)
@@ -90,48 +91,41 @@ function RedisCmdStream:_decode_array(t)
 
       if typ == ARR then
         if n == -1 then
-          t[i] = n
-          ctx.i = i + 1
+          t[i], ctx[I] = n, i + 1
         else
-          t[i] = array_context(n, t)
-          ctx.status = 'array'
+          ctx[STATE], t[i] = 'array', array_context(n, t)
         end
       elseif typ == OK or typ == ERR or typ == INT then
-        t[i] = n
-        ctx.i = i + 1
+        t[i], ctx[I] = n, i + 1
       elseif typ == BULK then
-        ctx.status = 'array_string'
-        t[i] = n
+        t[i], ctx[STATE] = n, 'array_string'
       else
         error("Unsupported Type:" .. typ)
       end
     end
 
-    if ctx.status == 'array_string' then
+    if ctx[STATE] == 'array_string' then
       local data = self._buffer:read_n(t[i])
       if not data then return end
-      t[i] = data
-      ctx.status = "array_string_eol"
+      t[i], ctx[STATE] = data, 'array_string_eol'
     end
 
-    if ctx.status == 'array_string_eol' then
+    if ctx[STATE] == 'array_string_eol' then
       local data = self._buffer:read_n(#EOL)
       if not data then return end
       assert(data == EOL)
-      ctx.i = i + 1
-      ctx.status = "line"
+      ctx[STATE], ctx[I] = 'line', i + 1
     end
 
-    if ctx.status == 'array' then
+    if ctx[STATE] == 'array' then
       if not self:_decode_array(t[i]) then
         return
       end
-      ctx.i = i + 1
-      ctx.status = "line"
+      ctx[STATE], ctx[I] = 'line', i + 1
     end
   end
 
-  if ctx.i > ctx.n then
+  if ctx[I] > ctx[N] then
     t[0] = nil
     return true
   end
