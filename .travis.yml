@@ -26,6 +26,7 @@ install:
 script: 
   - cd test
   - lunit.sh test_stream.lua
+  - lunit.sh test_commander.lua
 
 after_success:
   - luacov-coveralls -v

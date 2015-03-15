@@ -1,67 +1,13 @@
 pcall(require, "luacov")
 
 local RedisStream = require "lluv.redis.stream"
-
-local lunit = lunit
-
-local RUN = lunit and function()end or function ()
-  local res = lunit.run()
-  if res.errors + res.failed > 0 then
-    os.exit(-1)
-  end
-  return os.exit(0)
-end
-
-lunit = require "lunit"
-
-local TEST_CASE  = assert(lunit.TEST_CASE)
-local skip       = lunit.skip or function() end
-local IT         = function(m)
-  return setmetatable(m, {__call = function(self, describe, fn)
-    self["test " .. describe] = fn
-  end})
-end
-
-local function nreturn(...)
-  return select("#", ...), ...
-end
-
-local function PASS() return true end
-
-local function FALSE() return false end
-
-local function CMD(t)if type(t)=="table"then return table.concat(t)end return t end
-
-local is_equal do
-  local cmp_t
-  local function cmp_v(v1,v2)
-    local flag = true
-    if type(v1) == 'table' then
-      flag = (type(v2) == 'table') and cmp_t(v1, v2)
-    else
-      flag = (v1 == v2)
-    end
-    return flag
-  end
-
-  function cmp_t(t1,t2)
-    for k in pairs(t2)do
-      if t1[k] == nil then
-        return false
-      end
-    end
-    for k,v in pairs(t1)do
-      if not cmp_v(t2[k],v) then 
-        return false 
-      end
-    end
-    return true
-  end
-
-  is_equal = cmp_v
-end
+local utils       = require "utils"
+local TEST_CASE   = require "lunit".TEST_CASE
 
 local pcall, error, type, table = pcall, error, type, table
+local RUN = utils.RUN
+local IT, CMD, PASS = utils.IT, utils.CMD, utils.PASS
+local nreturn, is_equal = utils.nreturn, utils.is_equal
 
 local ENABLE = true
 
