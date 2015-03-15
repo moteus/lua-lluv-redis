@@ -17,6 +17,7 @@ before_install:
   - bash .travis/setup_lua.sh
   - bash .travis/setup_uv.sh
   - sudo luarocks install luacov-coveralls
+  - sudo luarocks install lunitx
   - sudo luarocks install lluv --server=http://rocks.moonscript.org/dev UV_DIR=$TRAVIS_BUILD_DIR/libuv
 
 install:
@@ -24,7 +25,7 @@ install:
 
 script: 
   - cd test
-  - lua -lluacov test_stream.lua
+  - lunit.sh test_stream.lua
 
 after_success:
   - luacov-coveralls -j c.report.json

@@ -1,3 +1,5 @@
+pcall(require, "luacov")
+
 local RedisStream = require "lluv.redis.stream"
 
 local lunit = lunit
