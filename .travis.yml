@@ -28,7 +28,7 @@ script:
   - lunit.sh test_stream.lua
 
 after_success:
-  - luacov-coveralls -j c.report.json
+  - luacov-coveralls -v
 
 notifications:
   email:
