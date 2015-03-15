@@ -76,6 +76,7 @@ function setup()
 end
 
 it("provide public API", function()
+  assert_not_nil(RedisStream.NULL)
   assert_function(stream.execute)
   assert_function(stream.append)
   assert_function(stream.command)
@@ -137,6 +138,17 @@ it("should encode command with string args", function()
   assert_equal("*2\r\n$4\r\nECHO\r\n$11\r\nHello world\r\n", msg)
 end)
 
+it("should encode command with nil args", function()
+  local msg
+  stream:on_command(function(_, cmd)
+    msg = CMD(cmd)
+  end)
+
+  stream:command({"ECHO", RedisStream.NULL}, PASS)
+
+  assert_equal("*2\r\n$4\r\nECHO\r\n*-1\r\n", msg)
+end)
+
 it("should encode command with array args", function()
   local msg
   stream:on_command(function(_, cmd)
@@ -157,6 +169,45 @@ it("should encode command with array args", function()
           "$6\r\n" .. "foobar\r\n",
   }
   local arg = {{1,2,3},{'Foo','Bar','foobar'}}
+
+  stream:command({"ECHO", arg} , PASS)
+
+  assert_equal(res, msg)
+end)
+
+it("should encode command with array with holes", function()
+  local msg
+  stream:on_command(function(_, cmd)
+    msg = CMD(cmd)
+  end)
+
+  local res = table.concat{
+    "*2\r\n",
+      "$4\r\n" .. "ECHO\r\n",
+      "*3\r\n",
+        ":1\r\n",
+        "*-1\r\n",
+        ":3\r\n",
+  }
+  local arg = {1, nil, 3, n = 3}
+
+  stream:command({"ECHO", arg} , PASS)
+
+  assert_equal(res, msg)
+end)
+
+it("should encode command with empty array", function()
+  local msg
+  stream:on_command(function(_, cmd)
+    msg = CMD(cmd)
+  end)
+
+  local res = table.concat{
+    "*2\r\n",
+      "$4\r\n" .. "ECHO\r\n",
+      "*0\r\n",
+  }
+  local arg = {}
 
   stream:command({"ECHO", arg} , PASS)
 

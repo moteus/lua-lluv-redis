@@ -12,6 +12,8 @@
 
 local ut = require "lluv.utils"
 
+local NULL = {}
+
 local RedisCmdStream = ut.class() do
 
 local EOL  = "\r\n"
@@ -50,14 +52,20 @@ local function encode(t, res)
     return res
   end
 
+  if t == nil or t == NULL then
+    res[#res + 1] = "*-1" .. EOL
+    return res
+  end
+
   if type(t) == "number" then
     res[#res + 1] = INT .. t .. EOL
     return res
   end
 
-  res[#res + 1] = "*" .. #t .. EOL
-  for i, m in ipairs(t) do
-    encode(m, res)
+  local n = t.n or #t
+  res[#res + 1] = "*" .. tostring(n) .. EOL
+  for i = 1, n do
+    encode(t[i], res)
   end
 
   return res
@@ -246,4 +254,5 @@ end
 
 return {
   new = RedisCmdStream.new;
+  NULL = NULL;
 }
