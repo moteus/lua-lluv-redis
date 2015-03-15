@@ -1,6 +1,3 @@
-# lua-lluv-redis
-
-```Lua
 -- Using stream decoder with lluv
 local uv          = require "lluv"
 local RedisStream = require "lluv.redis.stream"
@@ -34,4 +31,3 @@ uv.tcp():connect("127.0.0.1", 6379, function(cli, err)
 end)
 
 uv.run(debug.traceback)
-```
