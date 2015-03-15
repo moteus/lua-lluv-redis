@@ -361,6 +361,24 @@ it("halt should calls every callback", function()
   assert_true(called[3])
 end)
 
+it("halt should clear stream", function()
+  local ERR = {}
+  local called = {}
+
+  stream:on_command(PASS)
+
+  assert(stream._buffer:empty()) --! @fixme do not use internal variable
+  
+  stream:append("+hello\r\n")
+  stream:append("+world\r\n")
+
+  assert(not stream._buffer:empty())
+
+  stream:halt(ERR)
+
+  assert(stream._buffer:empty())
+end)
+
 it("should decode nil", function()
   stream:on_command(PASS)
 

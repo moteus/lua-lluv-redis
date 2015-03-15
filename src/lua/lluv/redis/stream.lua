@@ -230,7 +230,7 @@ end
 function RedisCmdStream:halt(err)
   while true do
     local task = self._queue:pop()
-    if not task then return end
+    if not task then break end
     task[CB](self, err)
   end
   self._buffer:reset()
