@@ -624,6 +624,33 @@ it('halt should call txn callbacks', function()
 
 end)
 
+it('should support discard by WATCH command', function()
+  stream:on_command(PASS)
+
+  stream:command("WATCH a", function(self, err, res)
+    assert_equal("OK", res)
+  end)
+
+  stream:command("MULTI", function(self, err, res)
+    assert_equal("OK", res)
+  end)
+
+  stream:command("INCR a", function(self, err, res)
+    assert_nil(res)
+  end)
+
+  stream:command("EXEC", function(self, err, res)
+    assert_nil(res)
+  end)
+
+  stream:append"+OK\r\n"
+  stream:append"+OK\r\n"
+  stream:append"+QUEUED\r\n"
+  stream:append"*-1\r\n"
+
+  stream:execute()
+end)
+
 end
 
 RUN()

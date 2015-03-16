@@ -180,6 +180,15 @@ function RedisCmdStream:_next_data_task()
     elseif typ == ARR then
       if data == -1 then
         queue:pop()
+
+        if task[CMD] == 'EXEC' then
+          while true do
+            local task = self._txn:pop()
+            if not task then break end
+            task[CB](self._self)
+          end
+        end
+
         cb(self._self)
       else
         task[STATE], task[DATA] = 'ARR', array_context(data)
@@ -302,6 +311,31 @@ function RedisCmdStream:on_halt(handler)
 end
 
 end
+
+  stream = RedisCmdStream.new("<self>"):on_command(function() return true end)
+
+  stream:command("WATCH a", function(self, err, res)
+    print("WATCH:", self, err, res)
+  end)
+
+  stream:command("MULTI", function(self, err, res)
+    print("MULTI:", self, err, res)
+  end)
+
+  stream:command("INCR a", function(self, err, res)
+    print("INCR :", self, err, res)
+  end)
+
+  stream:command("EXEC", function(self, err, res)
+    print("EXEC:", self, err, res)
+  end)
+
+  stream:append"+OK\r\n"
+  stream:append"+OK\r\n"
+  stream:append"+QUEUED\r\n"
+  stream:append"*-1\r\n"
+
+  stream:execute()
 
 return {
   new = RedisCmdStream.new;
