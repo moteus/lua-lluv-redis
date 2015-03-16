@@ -95,7 +95,7 @@ function RedisCmdStream:_decode_array(t)
     if ctx[STATE] == 'line' then
       local line = self._buffer:read_line()
       if not line then return end
-      local typ, n = decode_line(line)
+      local typ, n, ext = decode_line(line)
   
       if not typ then return end
 
@@ -105,8 +105,10 @@ function RedisCmdStream:_decode_array(t)
         else
           ctx[STATE], t[i] = 'array', array_context(n, t)
         end
-      elseif typ == OK or typ == ERR or typ == INT then
+      elseif typ == OK or typ == INT then
         t[i], ctx[I] = n, i + 1
+      elseif typ == ERR then
+        t[i], ctx[I] = {error = n, info = ext}, i + 1
       elseif typ == BULK then
         t[i], ctx[STATE] = n, 'array_string'
       else
@@ -209,8 +211,11 @@ function RedisCmdStream:execute()
           local task = self._txn:pop()
           if not task then break end
 
-          --! @fixme proceed errors
-          task[CB](self._self, nil, t[i])
+          if type(t[i]) == "table" and t[i].error then
+            task[CB](self._self, t[i].error, t[i].info)
+          else
+            task[CB](self._self, nil, t[i])
+          end
           i = i + 1
         end
       end

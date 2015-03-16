@@ -256,7 +256,7 @@ it("should decode array", function()
 
   stream:execute()
 
-  assert(is_equal({{1,2,3},{'Foo','Bar','foobar'}}, res))
+  assert(is_equal({{1,2,3},{'Foo',{error = 'Bar'},'foobar'}}, res))
 end)
 
 it("should decode array by chunks", function()
@@ -288,7 +288,7 @@ it("should decode array by chunks", function()
   end
   stream:append(str:sub(-1)):execute()
 
-  assert(is_equal({{1,2,3},{'Foo','Bar','foobar'}}, res))
+  assert(is_equal({{1,2,3},{'Foo',{error = 'Bar'},'foobar'}}, res))
 end)
 
 it("should decode bulk by chunks", function()
@@ -579,9 +579,10 @@ it('should pass error to command callback', function()
   end)
 
   stream:command("EXEC", function(self, err, res)
+    local ERR = {error = 'ERR', info = 'Operation against a key holding the wrong kind of value'}
     assert_table(res)
-    assert_equal(1, res[1])
-    assert_equal(2, res[2])
+    assert_equal("OK", res[1])
+    assert(is_equal(ERR, res[2]))
   end)
 
   stream:append"+OK\r\n"
