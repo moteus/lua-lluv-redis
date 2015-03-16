@@ -1,3 +1,5 @@
+package.path = "..\\src\\lua\\?.lua;" .. package.path
+
 pcall(require, "luacov")
 
 local RedisStream    = require "lluv.redis.stream"
@@ -17,9 +19,10 @@ local _ENV = TEST_CASE'redis command encoder/decoder' if ENABLE then
 local it = IT(_ENV or _M)
 
 local stream, command
+local SELF = {}
 
 function setup()
-  stream  = assert(RedisStream.new())
+  stream  = assert(RedisStream.new(SELF))
   command = assert(RedisCommander.new(stream))
 end
 
@@ -47,6 +50,16 @@ it("echo no args", function()
   assert_error(function()
     command:echo(PASS)
   end)
+end)
+
+it("command callback should get correct self", function()
+  stream:on_command(PASS)
+  command:ping(function(self, err, data)
+    assert_equal(SELF, self)
+    assert_equal("PONG", data)
+  end)
+  stream:append("+PONG\r\n"):execute()
+
 end)
 
 end

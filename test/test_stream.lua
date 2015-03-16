@@ -1,3 +1,5 @@
+package.path = "..\\src\\lua\\?.lua;" .. package.path
+
 pcall(require, "luacov")
 
 local RedisStream = require "lluv.redis.stream"
@@ -431,5 +433,167 @@ it("should decode arrays with holes", function()
 end)
 
 end -- test case
+
+local _ENV = TEST_CASE'redis stream transaction' if ENABLE then
+
+local it = IT(_ENV or _M)
+
+local stream
+
+function setup()
+  stream = assert(RedisStream.new())
+end
+
+it('should discard empty txn', function()
+  stream:on_command(PASS)
+
+  stream:command("MULTI", function(self, err, res)
+    assert_equal("OK", res)
+  end)
+
+  stream:command("DISCARD", function(self, err, res)
+    assert_equal("OK", res)
+  end)
+
+  stream:append"+OK\r\n"
+  stream:append"+OK\r\n"
+
+  stream:execute()
+end)
+
+it('should commit empty txn', function()
+  stream:on_command(PASS)
+
+  stream:command("MULTI", function(self, err, res)
+    assert_equal("OK", res)
+  end)
+
+  stream:command("EXEC", function(self, err, res)
+    assert_equal("OK", res)
+  end)
+
+  stream:append"+OK\r\n"
+  stream:append"+OK\r\n"
+
+  stream:execute()
+end)
+
+it('should call all callbacks on exec', function()
+  stream:on_command(PASS)
+
+  stream:command("MULTI", function(self, err, res)
+    assert_equal("OK", res)
+  end)
+
+  stream:command("INCR foo", function(self, err, res)
+    assert_equal(1, res)
+  end)
+
+  stream:command("INCR bar", function(self, err, res)
+    assert_equal(2, res)
+  end)
+
+  stream:command("EXEC", function(self, err, res)
+    assert_table(res)
+    assert_equal(1, res[1])
+    assert_equal(2, res[2])
+  end)
+
+  stream:append"+OK\r\n"
+  stream:append"+QUEUED\r\n"
+  stream:append"+QUEUED\r\n"
+  stream:append"*2\r\n:1\r\n:2\r\n"
+
+  stream:execute()
+end)
+
+it('should call all callbacks on discard', function()
+  stream:on_command(PASS)
+
+  stream:command("MULTI", function(self, err, res)
+    assert_equal("OK", res)
+  end)
+
+  stream:command("INCR foo", function(self, err, res)
+    assert_equal("DISCARD", err)
+  end)
+
+  stream:command("INCR bar", function(self, err, res)
+    assert_equal("DISCARD", err)
+  end)
+
+  stream:command("DISCARD", function(self, err, res)
+    assert_equal("OK", res)
+  end)
+
+  stream:append"+OK\r\n"
+  stream:append"+QUEUED\r\n"
+  stream:append"+QUEUED\r\n"
+  stream:append"+OK\r\n"
+
+  stream:execute()
+end)
+
+it('should ingnore failed commands', function()
+  stream:on_command(PASS)
+
+  stream:command("MULTI", function(self, err, res)
+    assert_equal("OK", res)
+  end)
+
+  stream:command("INCR foo", function(self, err, res)
+    assert_equal("DISCARD", err)
+  end)
+
+  stream:command("INCR a b c", function(self, err, res)
+    assert_equal("ERR", err)
+    assert_equal("wrong number of arguments for 'incr' command", res)
+  end)
+
+  stream:command("DISCARD", function(self, err, res)
+    assert_equal("OK", res)
+  end)
+
+  stream:append"+OK\r\n"
+  stream:append"+QUEUED\r\n"
+  stream:append"-ERR wrong number of arguments for 'incr' command\r\n"
+  stream:append"+OK\r\n"
+
+  stream:execute()
+end)
+
+it('should pass error to command callback', function()
+  stream:on_command(PASS)
+
+  stream:command("MULTI", function(self, err, res)
+    assert_equal("OK", res)
+  end)
+
+  stream:command("SET a 3", function(self, err, res)
+    assert_equal("OK", res)
+  end)
+
+  stream:command("LPOP a", function(self, err, res)
+    assert_equal("ERR", err)
+    assert_equal("Operation against a key holding the wrong kind of value", res)
+  end)
+
+  stream:command("EXEC", function(self, err, res)
+    assert_table(res)
+    assert_equal(1, res[1])
+    assert_equal(2, res[2])
+  end)
+
+  stream:append"+OK\r\n"
+  stream:append"+QUEUED\r\n"
+  stream:append"+QUEUED\r\n"
+  stream:append"*2\r\n"
+  stream:append"+OK\r\n"
+  stream:append"-ERR Operation against a key holding the wrong kind of value\r\n"
+
+  stream:execute()
+end)
+
+end
 
 RUN()

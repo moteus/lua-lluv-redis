@@ -23,7 +23,7 @@ local INT  = ':'
 local BULK = '$'
 local ARR  = '*'
 
-local CB, STATE, DATA = 1, 2, 3
+local CB, STATE, DATA, CMD = 1, 2, 3, 4
 local I, N = 3, 1
 
 local function decode_line(line)
@@ -81,6 +81,7 @@ local function is_callable(f) return (type(f) == 'function') and f end
 function RedisCmdStream:__init(cb_self)
   self._buffer = ut.Buffer.new(EOL)
   self._queue  = ut.Queue.new()
+  self._txn    = ut.Queue.new()
   self._self   = cb_self or self
 
   return self
@@ -154,7 +155,18 @@ function RedisCmdStream:_next_data_task()
     local typ, data, add = decode_line(line)
     if typ == OK then
       queue:pop()
-      cb(self._self, nil, data)
+      if data == 'QUEUED' then
+        self._txn:push(task)
+      else
+        if task[CMD] == 'DISCARD' then
+          while true do
+            local task = self._txn:pop()
+            if not task then break end
+            task[CB](self._self, 'DISCARD')
+          end
+        end
+        cb(self._self, nil, data)
+      end
     elseif typ == ERR then
       queue:pop()
       cb(self._self, data, add)
@@ -190,6 +202,19 @@ function RedisCmdStream:execute()
         return
       end
       self._queue:pop()
+
+      if task[CMD] == 'EXEC' then
+        local t, i = task[DATA], 1
+        while true do
+          local task = self._txn:pop()
+          if not task then break end
+
+          --! @fixme proceed errors
+          task[CB](self._self, nil, t[i])
+          i = i + 1
+        end
+      end
+
       cb(self._self, nil, task[DATA])
     end
 
@@ -215,14 +240,16 @@ end
 
 function RedisCmdStream:command(cmd, cb)
   assert(is_callable(cb))
-  cmd = self:encode_command(cmd)
-  if self:_on_command(cmd, cb) then
-    self._queue:push{cb}
+  local ecmd = self:encode_command(cmd)
+  if self:_on_command(ecmd, cb) then
+    self._queue:push{cb, nil, nil, cmd}
   end
   return self._self
 end
 
 function RedisCmdStream:pipeline(cmd, cb)
+  assert(#cb > 1)
+
   local fn = function(...)
     for i = 1, #cb do cb[i](...) end
   end
@@ -248,6 +275,13 @@ function RedisCmdStream:reset(err)
     if not task then break end
     task[CB](self, err)
   end
+
+  while true do
+    local task = self._txn:pop()
+    if not task then break end
+    task[CB](self, err)
+  end
+
   self._buffer:reset()
   return
 end
