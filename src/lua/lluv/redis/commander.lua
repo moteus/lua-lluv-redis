@@ -1,12 +1,8 @@
 local ut     = require "lluv.utils"
 local Stream = require "lluv.redis.stream"
 
-local function bind_first(fn, self)
-  return function(_, ...) return fn(self, ...) end
-end
-
 local function bind_converter(fn, self, decoder)
-  return function(_, err, data)
+  return function(self, err, data)
     if err then return fn(self, err, data) end
     return fn(self, nil, decoder(data))
   end
@@ -14,23 +10,27 @@ end
 
 local function make_single_command(cmd)
   return function(self, cb)
-    return self._stream:command(cmd, bind_first(cb, self))
+    return self._stream:command(cmd, cb)
   end
 end
 
 local function make_single_args_command(cmd)
   return function(self, arg, cb)
-    return self._stream:command({n = 2, cmd, arg}, bind_first(cb, self))
+    return self._stream:command({n = 2, cmd, arg}, cb)
   end
+end
+
+local function pack_args(...)
+  local n    = select("#", ...)
+  local args = {n = n - 1, ...}
+  local cb   = args[n]
+  args[n] = nil
+  return args, cb
 end
 
 local function make_multi_args_command(cmd)
   return function(self, ...)
-    local n = select("#", ...)
-    local args = {n = n, cmd, ...}
-    local cb = args[n + 1]
-    args[n + 1] = nil
-    return self._stream:command(args, bind_first(cb, self))
+    return self._stream:command(pack_args(cmd, ...))
   end
 end
 

@@ -48,6 +48,22 @@ it("on_command callback signature", function()
   assert_true(f)
 end)
 
+it("response callback self arg", function()
+  local SELF = {}
+  stream = RedisStream.new(SELF)
+  stream:on_command(PASS)
+
+  local res
+  stream:command("***", function(self, err, data)
+    assert_equal(SELF, self)
+    assert_nil(err)
+    res = data
+  end)
+  stream:append("$5\r\nhello\r\n"):execute()
+
+  assert_string(res)
+end)
+
 it("should fail without command callback", function()
   stream:on_command(PASS)
   assert_error(function() stream:command("PING") end)

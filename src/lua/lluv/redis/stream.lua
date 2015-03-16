@@ -78,9 +78,10 @@ end
 
 local function is_callable(f) return (type(f) == 'function') and f end
 
-function RedisCmdStream:__init()
+function RedisCmdStream:__init(cb_self)
   self._buffer = ut.Buffer.new(EOL)
   self._queue  = ut.Queue.new()
+  self._self   = cb_self or self
 
   return self
 end
@@ -153,19 +154,19 @@ function RedisCmdStream:_next_data_task()
     local typ, data, add = decode_line(line)
     if typ == OK then
       queue:pop()
-      cb(self, nil, data)
+      cb(self._self, nil, data)
     elseif typ == ERR then
       queue:pop()
-      cb(self, data, add)
+      cb(self._self, data, add)
     elseif typ == INT then
       queue:pop()
-      cb(self, nil, data)
+      cb(self._self, nil, data)
     elseif typ == BULK then
       task[STATE], task[DATA] = 'BULK', data
     elseif typ == ARR then
       if data == -1 then
         queue:pop()
-        cb(self)
+        cb(self._self)
       else
         task[STATE], task[DATA] = 'ARR', array_context(data)
         return task
@@ -189,7 +190,7 @@ function RedisCmdStream:execute()
         return
       end
       self._queue:pop()
-      cb(self, nil, task[DATA])
+      cb(self._self, nil, task[DATA])
     end
 
     if task[STATE] == 'BULK_EOL' then
@@ -197,7 +198,7 @@ function RedisCmdStream:execute()
       if not eol then return end
       assert(eol == EOL, eol)
       assert(task == self._queue:pop())
-      cb(self, nil, task[DATA])
+      cb(self._self, nil, task[DATA])
     end
 
   end
@@ -218,7 +219,7 @@ function RedisCmdStream:command(cmd, cb)
   if self:_on_command(cmd, cb) then
     self._queue:push{cb}
   end
-  return self
+  return self._self
 end
 
 function RedisCmdStream:pipeline(cmd, cb)
@@ -236,6 +237,12 @@ function RedisCmdStream:pipeline(cmd, cb)
 end
 
 function RedisCmdStream:halt(err)
+  self:reset(err)
+  if self._on_halt then self:_on_halt(err) end
+  return
+end
+
+function RedisCmdStream:reset(err)
   while true do
     local task = self._queue:pop()
     if not task then break end
@@ -247,6 +254,11 @@ end
 
 function RedisCmdStream:on_command(handler)
   self._on_command = handler
+  return self
+end
+
+function RedisCmdStream:on_halt(handler)
+  self._on_halt = handler
   return self
 end
 
