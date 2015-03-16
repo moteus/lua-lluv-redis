@@ -595,6 +595,35 @@ it('should pass error to command callback', function()
   stream:execute()
 end)
 
+it('halt should call txn callbacks', function()
+  stream:on_command(PASS)
+
+  stream:command("MULTI", function(self, err, res)
+    assert_equal("OK", res)
+  end)
+
+  stream:command("INCR foo", function(self, err, res)
+    assert_equal("HALT", err)
+  end)
+
+  stream:command("INCR bar", function(self, err, res)
+    assert_equal("HALT", err)
+  end)
+
+  stream:command("EXEC", function(self, err, res)
+    assert_equal("HALT", err)
+  end)
+
+  stream:append"+OK\r\n"
+  stream:append"+QUEUED\r\n"
+  stream:append"+QUEUED\r\n"
+
+  stream:execute()
+
+  stream:halt"HALT"
+
+end)
+
 end
 
 RUN()
