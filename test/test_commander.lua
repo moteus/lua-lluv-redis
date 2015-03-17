@@ -1,6 +1,6 @@
 package.path = "..\\src\\lua\\?.lua;" .. package.path
 
--- pcall(require, "luacov")
+pcall(require, "luacov")
 
 local RedisStream    = require "lluv.redis.stream"
 local RedisCommander = require "lluv.redis.commander"
