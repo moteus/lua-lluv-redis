@@ -1,44 +1,94 @@
 local ut     = require "lluv.utils"
 local Stream = require "lluv.redis.stream"
 
-local function bind_converter(fn, self, decoder)
-  return function(self, err, data)
-    if err then return fn(self, err, data) end
-    return fn(self, nil, decoder(data))
-  end
-end
+--- Notes
+-- Request is array of strings.
+-- You can not pass number (:123), NULL(*-1), basic string (+HELLO) or any other type.
 
-local function make_single_command(cmd)
-  return function(self, cb)
-    return self._stream:command(cmd, cb)
-  end
-end
+local function dummy()end
 
-local function make_single_args_command(cmd)
-  return function(self, arg, cb)
-    return self._stream:command({n = 2, cmd, arg}, cb)
-  end
-end
+local function is_callable(f) return (type(f) == 'function') and f end
 
-local function pack_args(...)
-  local n    = select("#", ...)
-  local args = {n = n - 1, ...}
-  local cb   = args[n]
-  args[n] = nil
-  return args, cb
-end
+--- Arguments variants
+-- argument            -- ECHO "hello"
+-- hash                -- MSET {key1=value,key2=value}
+-- array               -- MGET {key1, key2}
+-- multiple arguments  -- SET  key value timeout
 
-local function make_multi_args_command(cmd)
-  return function(self, ...)
-    return self._stream:command(pack_args(cmd, ...))
-  end
-end
+local REQUEST = {
+  arg = function(cmd, arg, cb)
+    return {cmd, arg}, cb or dummy
+  end;
+  
+  arg_or_array = function(cmd, args, cb)
+    local res
+    if type(args) == "table" then
+      res = {cmd}
+      for i = 1, #args do res[i+1] = args[i] end
+      return res
+    else res = {cmd, args} end
+    return res, cb or dummy
+  end;
 
-local function make_decoder_command(cmd, decoder)
-  return function(self, cb)
-    return self._stream:command(cmd, bind_converter(cb, self, decoder))
-  end
-end
+  arg_or_hash = function(cmd, args, cb)
+    local res
+    if type(args) == "table" then
+      res = {cmd}
+      for k, v in pairs(args) do
+        res[#res + 1] = k
+        res[#res + 1] = v
+      end
+    else res = {cmd, args} end
+    return res, cb or dummy
+  end;
+
+  multi_args  = function(...)
+    local n    = select("#", ...)
+    local args = {...}
+    local cb   = args[n]
+    if is_callable(cb) then
+      args[n] = nil
+    else
+      cb = dummy
+    end
+
+    return args, cb
+  end;
+
+  none = function(cmd, cb) return cmd, cb or dummy end;
+}
+
+--- Result variants
+-- Boolean
+--     - `OK` string MULTI
+--     - `1`  number EXISTS 1
+-- Number INCR a
+-- Array  MGET key1 key2
+-- Hash   HGETALL hash
+-- NULL   GET nonexists
+-- Custom INFO
+
+local RESPONSE = {
+  string_bool = function(err, resp)
+    return err, resp == 'OK'
+  end;
+
+  number_bool = function(err, resp)
+    return err, resp == 1
+  end;
+
+  hash        = function(err, resp)
+    local res = {}
+    for i = 1, #resp, 2 do
+      res[ resp[i] ] = resp[i + 1]
+    end
+    return err, res
+  end;
+
+  pass        = function(err, resp)
+    return err, resp
+  end;
+}
 
 local RedisCommander = ut.class() do
 
@@ -48,9 +98,23 @@ function RedisCommander:__init(stream)
   return self
 end
 
-RedisCommander.ping = make_single_command("PING")
+local function IMPLEMENT(name, request, response)
+  local decoder = function(err, data)
+    if err then return err, data end --! @todo Build error object
+    return response(err, data)
+  end
 
-RedisCommander.echo = make_single_args_command("ECHO")
+  RedisCommander[name:lower()] = function(self, ...)
+    local cmd, cb = request(name, ...)
+    self._stream:command(cmd, cb, decoder)
+  end
+end
+
+IMPLEMENT("PING",   REQUEST.none,        RESPONSE.pass        )
+IMPLEMENT("ECHO",   REQUEST.arg,         RESPONSE.pass        )
+IMPLEMENT("EXISTS", REQUEST.arg,         RESPONSE.number_bool )
+IMPLEMENT("SET",    REQUEST.multi_args,  RESPONSE.string_bool )
+IMPLEMENT("GET",    REQUEST.arg,         RESPONSE.pass        )
 
 end
 
