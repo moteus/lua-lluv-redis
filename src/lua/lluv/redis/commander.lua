@@ -142,13 +142,15 @@ function RedisCommander:each_command(fn)
 end
 
 RedisCommander
-  :add_command("QUIT",   REQUEST.none,        RESPONSE.string_bool )
-  :add_command("PING",   REQUEST.none,        RESPONSE.pass        )
-  :add_command("ECHO",   REQUEST.arg,         RESPONSE.pass        )
-  :add_command("EXISTS", REQUEST.arg,         RESPONSE.number_bool )
-  :add_command("SET",    REQUEST.multi_args,  RESPONSE.string_bool )
-  :add_command("GET",    REQUEST.arg,         RESPONSE.pass        )
-
+  :add_command("QUIT",    REQUEST.none,        RESPONSE.string_bool )
+  :add_command("PING",    REQUEST.none,        RESPONSE.pass        )
+  :add_command("ECHO",    REQUEST.arg,         RESPONSE.pass        )
+  :add_command("EXISTS",  REQUEST.arg,         RESPONSE.number_bool )
+  :add_command("SET",     REQUEST.multi_args,  RESPONSE.string_bool )
+  :add_command("GET",     REQUEST.arg,         RESPONSE.pass        )
+  :add_command("MULTI",   REQUEST.none,        RESPONSE.string_bool )
+  :add_command("EXEC",    REQUEST.none,        RESPONSE.pass        )
+  :add_command("DISCARD", REQUEST.none,        RESPONSE.string_bool )
 end
 
 return {

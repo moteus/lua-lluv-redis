@@ -7,15 +7,32 @@
 
 ### lluv client
 ```Lua
-local uv    = require "lluv"
-local redis = require "lluv.redis"
-
 redis.Connection.new():open(function(cli)
   cli:ping(print)
   cli:quit(print)
 end)
+```
 
-uv.run()
+### basic transaction
+```Lua
+cli:open(function()
+  cli:multi(function(cli, err, data) -- begin transaction
+    print("MULTI:", data)
+
+    -- we can proceed each command in separate callback
+    cli:set("a", "10", function(cli, err, data)
+      print("SET:", data)
+    end)
+
+    cli:ping() --or we can ignore command callback
+
+    cli:exec(function(cli, err, res) -- end transaction
+      -- and proceed all results in exec callback
+      for k, v in ipairs(res) do print("CMD #" .. k, v) end
+
+    end)
+  end)
+end)
 ```
 
 ### Using low-level parser
