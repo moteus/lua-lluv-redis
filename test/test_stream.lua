@@ -476,6 +476,37 @@ it("should decode arrays with holes", function()
   assert_equal(3,res[3])
 end)
 
+it("should use custom result decoder", function()
+  stream:on_command(PASS)
+
+  local res
+  stream:command("PING", function(self, err, data)
+    assert_nil(err)
+    res = data
+  end, function(err, res)
+    assert_equal("PONG", res)
+    return nil, true
+  end)
+
+  stream:append("+PONG\r\n"):execute()
+
+  assert_equal(true, res)
+end)
+
+it("pass error to exec", function()
+  local called
+  stream:on_command(PASS)
+  stream:command("EXEC", function(cli, err, data)
+    called = true
+    assert_equal("ERR", err)
+    assert_equal("EXEC without MULTI", data)
+  end)
+
+  stream:append("-ERR EXEC without MULTI\r\n"):execute()
+
+  assert_true(called)
+end)
+
 end -- test case
 
 local _ENV = TEST_CASE'redis stream transaction' if ENABLE then
@@ -622,11 +653,14 @@ it('should pass error to command callback', function()
     assert_equal("Operation against a key holding the wrong kind of value", res)
   end)
 
-  stream:command("EXEC", function(self, err, res)
+  stream:command("EXEC", function(self, err, res, cmd_err)
     local ERR = {error = 'ERR', info = 'Operation against a key holding the wrong kind of value'}
     assert_table(res)
-    assert_equal("OK", res[1])
-    assert(is_equal(ERR, res[2]))
+    assert_table(cmd_err)
+    assert_nil  (           cmd_err[1])
+    assert_equal("OK",          res[1])
+    assert_equal(ERR.error, cmd_err[2])
+    assert_equal(ERR.info,      res[2])
   end)
 
   stream:append"+OK\r\n"

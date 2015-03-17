@@ -234,21 +234,27 @@ function RedisCmdStream:execute()
       self._queue:pop()
 
       if task[CMD] == 'EXEC' then
-        local t, i = task[DATA], 1
+        local t, i, e = task[DATA], 1, {}
         while true do
           local task = self._txn:pop()
           if not task then break end
 
+          local err, data
           if type(t[i]) == "table" and t[i].error then
-            task[CB](self._self, decoder(t[i].error, t[i].info))
+            err, data = task[DECODER](t[i].error, t[i].info)
           else
-            task[CB](self._self, decoder(nil, t[i]))
+            err, data = task[DECODER](nil, t[i])
           end
+          task[CB](self._self, err, data)
+
+          e[i], t[i] = decoder(err, data)
+
           i = i + 1
         end
+        cb(self._self, nil, t, e)
+      else
+        cb(self._self, decoder(nil, task[DATA]))
       end
-
-      cb(self._self, decoder(nil, task[DATA]))
     end
 
     if task[STATE] == 'BULK_EOL' then
