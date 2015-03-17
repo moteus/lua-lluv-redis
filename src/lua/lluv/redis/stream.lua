@@ -274,7 +274,7 @@ end
 function RedisCmdStream:command(cmd, cb, decoder)
   assert(is_callable(cb))
   local cmd, cmd_name = self:encode_command(cmd)
-  if self:_on_command(cmd, cb) then
+  if self:_on_command(cmd) then
     self._queue:push{cb, nil, nil, cmd_name, decoder or pass}
   end
   return self._self

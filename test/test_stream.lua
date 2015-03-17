@@ -40,10 +40,9 @@ it("on_command callback signature", function()
   stream:on_command(function(...)
     f = true
     local n, a, b, c = nreturn(...)
-    assert_equal(3, n)
+    assert_equal(2, n)
     assert_equal(stream, a)
     if type(b) ~= "string" then assert_table(b) end
-    assert_equal(PASS, c)
   end)
 
   stream:command("PING", PASS)
