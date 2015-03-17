@@ -31,6 +31,7 @@ script:
   - lunit.sh test_stream.lua
   - lunit.sh test_commander.lua
   - lunit.sh test_redis.lua
+  - lua      test_redis_pub_sub.lua
 
 after_success:
   - luacov-coveralls -v

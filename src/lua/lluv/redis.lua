@@ -34,11 +34,12 @@ function Connection:__init(server)
   self._host, self._port = split_host(server, "127.0.0.1", "6379")
   self._stream           = RedisStream.new(self)
   self._commander        = RedisCommander.new(self._stream)
+  self._on_message       = nil
+  self._on_error         = nil
 
   local function on_write_error(cli, err)
     if err then self._stream:halt(err) end
   end
-
   self._stream
   :on_command(function(s, data, cb)
     return self._cnn:write(data, on_write_error)
@@ -48,6 +49,9 @@ function Connection:__init(server)
     if err ~= EOF then
       ocall(self._on_error, self, err)
     end
+  end)
+  :on_message(function(...)
+    ocall(self._on_message, ...)
   end)
 
   return self
@@ -88,6 +92,11 @@ end
 
 function Connection:on_error(handler)
   self._on_error = handler
+  return self
+end
+
+function Connection:on_message(handler)
+  self._on_message = handler
   return self
 end
 
