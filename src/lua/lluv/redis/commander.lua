@@ -1,3 +1,15 @@
+------------------------------------------------------------------
+--
+--  Author: Alexey Melnichuk <alexeymelnichuck@gmail.com>
+--
+--  Copyright (C) 2015 Alexey Melnichuk <alexeymelnichuck@gmail.com>
+--
+--  Licensed according to the included 'LICENSE' document
+--
+--  This file is part of lua-lluv-redis library.
+--
+------------------------------------------------------------------
+
 local ut     = require "lluv.utils"
 local Stream = require "lluv.redis.stream"
 
@@ -92,14 +104,19 @@ local RESPONSE = {
 
 local RedisCommander = ut.class() do
 
+RedisCommander._commands = {}
+
 function RedisCommander:__init(stream)
-  self._stream = stream or Stream.new()
+  self._stream   = stream or Stream.new()
+  self._commands = {}
 
   return self
 end
 
 function RedisCommander:add_command(name, request, response)
   response = response or RESPONSE.pass
+
+  name = name:upper()
 
   local decoder = function(err, data)
     if err then return err, data end --! @todo Build error object
@@ -111,10 +128,21 @@ function RedisCommander:add_command(name, request, response)
     self._stream:command(cmd, cb, decoder)
   end
 
+  self._commands[name] = true
+
+  return self
+end
+
+function RedisCommander:each_command(fn)
+  for cmd in pairs(RedisCommander._commands) do fn(cmd, true) end
+  if self ~= RedisCommander then
+    for cmd in pairs(self._commands) do fn(cmd, false) end
+  end
   return self
 end
 
 RedisCommander
+  :add_command("QUIT",   REQUEST.none,        RESPONSE.string_bool )
   :add_command("PING",   REQUEST.none,        RESPONSE.pass        )
   :add_command("ECHO",   REQUEST.arg,         RESPONSE.pass        )
   :add_command("EXISTS", REQUEST.arg,         RESPONSE.number_bool )
@@ -124,5 +152,6 @@ RedisCommander
 end
 
 return {
-  new = RedisCommander.new
+  new      = RedisCommander.new;
+  commands = function(...) RedisCommander:each_command(...) end;
 }

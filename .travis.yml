@@ -13,6 +13,9 @@ branches:
   only:
     - master
 
+services:
+  - redis-server
+
 before_install:
   - bash .travis/setup_lua.sh
   - bash .travis/setup_uv.sh
@@ -27,6 +30,7 @@ script:
   - cd test
   - lunit.sh test_stream.lua
   - lunit.sh test_commander.lua
+  - lunit.sh test_redis.lua
 
 after_success:
   - luacov-coveralls -v

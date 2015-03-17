@@ -11,6 +11,7 @@ install = target('install', {
 target('test', install, function()
   run_test(nil, 'test_stream.lua')
   run_test(nil, 'test_commander.lua')
+  run_test(nil, 'test_redis.lua')
 
   if not test_summary() then
     quit("test fail")

@@ -26,6 +26,7 @@ build = {
   type = "builtin",
 
   modules = {
+    ["lluv.redis"           ] = "src/lua/lluv/redis.lua",
     ["lluv.redis.stream"    ] = "src/lua/lluv/redis/stream.lua",
     ["lluv.redis.commander" ] = "src/lua/lluv/redis/commander.lua",
   }

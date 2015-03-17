@@ -3,6 +3,24 @@
 [![Build Status](https://travis-ci.org/moteus/lua-lluv-redis.svg?branch=master)](https://travis-ci.org/moteus/lua-lluv-redis)
 [![Coverage Status](https://coveralls.io/repos/moteus/lua-lluv-redis/badge.svg)](https://coveralls.io/r/moteus/lua-lluv-redis)
 
+##Usage
+
+### lluv client
+```Lua
+local uv    = require "lluv"
+local redis = require "lluv.redis"
+
+redis.Connection.new():open(function(cli)
+  cli:ping(print)
+  cli:quit(print)
+end)
+
+uv.run()
+```
+
+### Using low-level parser
+You can use low-level parser to use other IO library.
+
 ```Lua
 -- Using stream decoder with lluv
 local uv          = require "lluv"
