@@ -312,14 +312,55 @@ it("should decode bulk by chunks", function()
   assert_equal('foobar', res)
 end)
 
+it("pipeline should encode commands with args", function()
+  local msg
+  stream:on_command(function(self, cmd)
+    msg = CMD(cmd)
+    return true
+  end)
+
+  local cmd1, task1 = stream:pipeline_command({"ECHO", "HELLO"}, PASS)
+  local cmd2, task2 = stream:pipeline_command({"ECHO", "WORLD"}, PASS)
+
+  stream:pipeline({cmd1, cmd2}, {task1, task2})
+
+  local res = table.concat{
+    "*2\r\n",
+      "$4\r\n", "ECHO\r\n",
+      "$5\r\n", "HELLO\r\n",
+    "*2\r\n",
+      "$4\r\n", "ECHO\r\n",
+      "$5\r\n", "WORLD\r\n",
+  }
+
+  assert_equal(res, msg)
+end)
+
 it("pipeline should calls each callback", function()
-  stream:on_command(PASS)
+  local msg
+  stream:on_command(function(self, cmd)
+    msg = CMD(cmd)
+    return true
+  end)
 
   local i = 0
-  stream:pipeline("PING\r\nPING\r\n", {
-    function() assert_equal(0, i) i = i + 1 end;
-    function() assert_equal(1, i) i = i + 1 end;
-  })
+  local cmd1, task1 = stream:pipeline_command("PING",
+    function(_, err, data) assert_equal(0, i) i = i + 1 end
+  )
+
+  assert_equal("PING\r\n", CMD(cmd1))
+
+  local cmd2, task2 = stream:pipeline_command("PING",
+    function(_, err, data) assert_equal(1, i) i = i + 1 end
+  )
+
+  assert_equal("PING\r\n", CMD(cmd2))
+
+  assert_nil(msg)
+
+  stream:pipeline({cmd1, cmd2}, {task1, task2})
+
+  assert_equal("PING\r\nPING\r\n", msg)
 
   stream:append("+PONG1\r\n")
   stream:append("+PONG2\r\n")
@@ -332,12 +373,16 @@ end)
 it("pipeline should decodes stream by chunks", function()
   stream:on_command(PASS)
 
-  local i = 0
-  local res 
-  stream:pipeline("PING\r\nPING\r\n", {
-    function(_, err, data) assert_equal(0, i) i = i + 1 res = data end;
-    function(_, err, data) assert_equal(1, i) i = i + 1 res = data end;
-  })
+  local i,res = 0
+  local cmd1, task1 = stream:pipeline_command("PING",
+    function(_, err, data) assert_equal(0, i) i = i + 1 res = data end
+  )
+
+  local cmd2, task2 = stream:pipeline_command("PING",
+    function(_, err, data) assert_equal(1, i) i = i + 1 res = data end
+  )
+
+  stream:pipeline({cmd1, cmd2}, {task1, task2})
 
   stream:append("+PONG1\r\n"):execute()
   assert_equal(1, i)

@@ -23,8 +23,10 @@ local INT  = ':'
 local BULK = '$'
 local ARR  = '*'
 
-local CB, STATE, DATA, CMD = 1, 2, 3, 4
+local CB, STATE, DATA, CMD, DECODER = 1, 2, 3, 4, 5
 local I, N = 3, 1
+
+local function pass(err, data) return err, data end
 
 local function decode_line(line)
   local p, d = line:sub(1, 1), line:sub(2)
@@ -72,11 +74,28 @@ local function encode(t, res)
 end
 
 local function encode_cmd(t)
-  if type(t) == 'string' then return t .. EOL end
-  return encode(t)
+  if type(t) == 'string' then return t .. EOL, t end
+  return encode(t), t[1]
 end
 
 local function is_callable(f) return (type(f) == 'function') and f end
+
+local function flat(t)
+  if type(t) == 'string' then return t end
+
+  local r = {}
+  for i = 1, #t do
+    local v = t[i]
+    if type(v) == 'string' then
+      r[#r + 1] = v
+    else
+      for j = 1, #v do
+        r[#r + 1] = v[j]
+      end
+    end
+  end
+  return r
+end
 
 function RedisCmdStream:__init(cb_self)
   self._buffer = ut.Buffer.new(EOL)
@@ -153,7 +172,7 @@ function RedisCmdStream:_next_data_task()
     local line = self._buffer:read_line()
     if not line then return end
 
-    local cb = task[CB]
+    local cb, decoder = task[CB], task[DECODER]
     local typ, data, add = decode_line(line)
     if typ == OK then
       queue:pop()
@@ -164,17 +183,17 @@ function RedisCmdStream:_next_data_task()
           while true do
             local task = self._txn:pop()
             if not task then break end
-            task[CB](self._self, 'DISCARD')
+            task[CB](self._self, task[DECODER]('DISCARD'))
           end
         end
-        cb(self._self, nil, data)
+        cb(self._self, decoder(nil, data))
       end
     elseif typ == ERR then
       queue:pop()
-      cb(self._self, data, add)
+      cb(self._self, decoder(data, add))
     elseif typ == INT then
       queue:pop()
-      cb(self._self, nil, data)
+      cb(self._self, decoder(nil, data))
     elseif typ == BULK then
       task[STATE], task[DATA] = 'BULK', data
     elseif typ == ARR then
@@ -185,11 +204,11 @@ function RedisCmdStream:_next_data_task()
           while true do
             local task = self._txn:pop()
             if not task then break end
-            task[CB](self._self)
+            task[CB](self._self, decoder())
           end
         end
 
-        cb(self._self)
+        cb(self._self, decoder())
       else
         task[STATE], task[DATA] = 'ARR', array_context(data)
         return task
@@ -203,7 +222,7 @@ function RedisCmdStream:execute()
     local task = self:_next_data_task()
     if not task then return end
 
-    local cb = task[CB]
+    local cb, decoder = task[CB], task[DECODER]
     if task[STATE] == 'BULK' then
       local data = self._buffer:read_n(task[DATA])
       if not data then return end
@@ -221,15 +240,15 @@ function RedisCmdStream:execute()
           if not task then break end
 
           if type(t[i]) == "table" and t[i].error then
-            task[CB](self._self, t[i].error, t[i].info)
+            task[CB](self._self, decoder(t[i].error, t[i].info))
           else
-            task[CB](self._self, nil, t[i])
+            task[CB](self._self, decoder(nil, t[i]))
           end
           i = i + 1
         end
       end
 
-      cb(self._self, nil, task[DATA])
+      cb(self._self, decoder(nil, task[DATA]))
     end
 
     if task[STATE] == 'BULK_EOL' then
@@ -237,7 +256,7 @@ function RedisCmdStream:execute()
       if not eol then return end
       assert(eol == EOL, eol)
       assert(task == self._queue:pop())
-      cb(self._self, nil, task[DATA])
+      cb(self._self, decoder(nil, task[DATA]))
     end
 
   end
@@ -252,25 +271,27 @@ function RedisCmdStream:encode_command(cmd)
   return encode_cmd(cmd)
 end
 
-function RedisCmdStream:command(cmd, cb)
+function RedisCmdStream:command(cmd, cb, decoder)
   assert(is_callable(cb))
-  local ecmd = self:encode_command(cmd)
-  if self:_on_command(ecmd, cb) then
-    self._queue:push{cb, nil, nil, cmd}
+  local cmd, cmd_name = self:encode_command(cmd)
+  if self:_on_command(cmd, cb) then
+    self._queue:push{cb, nil, nil, cmd_name, decoder or pass}
   end
   return self._self
 end
 
-function RedisCmdStream:pipeline(cmd, cb)
-  assert(#cb > 1)
+function RedisCmdStream:pipeline_command(cmd, cb, decoder)
+  assert(is_callable(cb))
+  local cmd, cmd_name = self:encode_command(cmd)
+  local task = {cb, nil, nil, cmd_name, decoder or pass}
+  return cmd, task
+end
 
-  local fn = function(...)
-    for i = 1, #cb do cb[i](...) end
-  end
-
-  if self:_on_command(cmd, fn) then
-    for i = 1, #cb do
-      self._queue:push{cb[i]}
+function RedisCmdStream:pipeline(cmd, tasks)
+  if self:_on_command(flat(cmd)) then
+    for i = 1, #tasks do
+      local task = tasks[i]
+      self._queue:push(task)
     end
   end
 
