@@ -29,6 +29,9 @@ it("provide public API", function()
   assert_function(stream.append)
   assert_function(stream.command)
   assert_function(stream.pipeline)
+  assert_function(stream.on_command)
+  assert_function(stream.on_halt)
+  assert_function(stream.on_message)
 end)
 
 it("should fail without on_command callback", function()
@@ -727,6 +730,188 @@ it('should support discard by WATCH command', function()
   stream:append"*-1\r\n"
 
   stream:execute()
+end)
+
+end
+
+local _ENV = TEST_CASE'redis pub/sub protocol' if ENABLE then
+
+local it = IT(_ENV or _M)
+
+local stream
+
+function setup()
+  stream = assert(RedisStream.new())
+end
+
+it('should subscribe', function()
+  local ch, msg, called
+  stream:on_command(PASS)
+  :on_message(function(self, channel, message)
+    called = true
+    ch, msg = channel, message
+  end)
+
+  stream:command({"SUBSCRIBE", "hello"}, PASS)
+
+  stream:append"*3\r\n"
+  stream:append"$9\r\n"
+  stream:append"subscribe\r\n"
+  stream:append"$5\r\n"
+  stream:append"hello\r\n"
+  stream:append":2\r\n"
+  stream:execute()
+
+  stream:append"*3\r\n"
+  stream:append"$7\r\n"
+  stream:append"message\r\n"
+  stream:append"$5\r\n"
+  stream:append"hello\r\n"
+  stream:append"$7\r\n"
+  stream:append"message\r\n"
+  stream:execute()
+  
+  assert_true(called)
+  assert_equal("hello",   ch)
+  assert_equal("message", msg)
+end)
+
+it('should fail with unexpected messages', function()
+  stream:on_command(PASS):on_message(PASS)
+
+  stream:append"*3\r\n"
+  stream:append"$7\r\n"
+  stream:append"message\r\n"
+  stream:append"$5\r\n"
+  stream:append"hello\r\n"
+  stream:append"$7\r\n"
+  stream:append"message\r\n"
+
+  assert_error(function()
+    stream:execute()
+  end)
+
+end)
+
+it('should fail with message after unsubscribe', function()
+  local ch, msg, called
+  stream:on_command(PASS)
+  :on_message(function(self, channel, message)
+    called = true
+    ch, msg = channel, message
+  end)
+
+  stream:command({"SUBSCRIBE", "hello"}, PASS)
+
+  stream:append"*3\r\n"
+  stream:append"$9\r\n"
+  stream:append"subscribe\r\n"
+  stream:append"$5\r\n"
+  stream:append"hello\r\n"
+  stream:append":2\r\n"
+  stream:execute()
+
+  stream:append"*3\r\n"
+  stream:append"$7\r\n"
+  stream:append"message\r\n"
+  stream:append"$5\r\n"
+  stream:append"hello\r\n"
+  stream:append"$7\r\n"
+  stream:append"message\r\n"
+  stream:execute()
+
+  assert_true(called)
+  assert_equal("hello",   ch)
+  assert_equal("message", msg)
+
+  stream:command({"UNSUBSCRIBE", "hello"}, PASS)
+
+  stream:append"*3\r\n"
+  stream:append"$11\r\n"
+  stream:append"unsubscribe\r\n"
+  stream:append"$5\r\n"
+  stream:append"hello\r\n"
+  stream:append":0\r\n"
+  stream:execute()
+
+  stream:append"*3\r\n"
+  stream:append"$7\r\n"
+  stream:append"message\r\n"
+  stream:append"$5\r\n"
+  stream:append"hello\r\n"
+  stream:append"$7\r\n"
+  stream:append"message\r\n"
+  assert_error(function()
+    stream:execute()
+  end)
+
+end)
+
+it('should proceed error responses in sub mode', function()
+  local ch, msg, called
+  stream:on_command(PASS)
+  :on_message(function(self, channel, message)
+    called = true
+    ch, msg = channel, message
+  end)
+
+  stream:command({"SUBSCRIBE", "hello"}, PASS)
+
+  local ping_called
+
+  stream:command("PING", function(self, err, data)
+    assert(not ping_called)
+    ping_called = 1
+    assert_equal(err,  "ERR")
+    assert_equal(data, "only (P)SUBSCRIBE / (P)UNSUBSCRIBE / QUIT allowed in this context")
+  end)
+
+  stream:append"*3\r\n"
+  stream:append"$9\r\n"
+  stream:append"subscribe\r\n"
+  stream:append"$5\r\n"
+  stream:append"hello\r\n"
+  stream:append":2\r\n"
+  stream:append"-ERR only (P)SUBSCRIBE / (P)UNSUBSCRIBE / QUIT allowed in this context\r\n"
+  stream:execute()
+
+  assert_equal(1, ping_called)
+
+  stream:command("PING", function(self, err, data)
+    assert_equal(1, ping_called)
+    ping_called = 2
+    assert_equal(err,  "ERR")
+    assert_equal(data, "only (P)SUBSCRIBE / (P)UNSUBSCRIBE / QUIT allowed in this context")
+  end)
+
+  stream:command("PING", function(self, err, data)
+    assert_equal(2, ping_called)
+    ping_called = 3
+    assert_equal(err,  "ERR")
+    assert_equal(data, "only (P)SUBSCRIBE / (P)UNSUBSCRIBE / QUIT allowed in this context")
+  end)
+
+  stream:append"-ERR only (P)SUBSCRIBE / (P)UNSUBSCRIBE / QUIT allowed in this context\r\n"
+  stream:execute()
+  assert_equal(2, ping_called)
+
+  stream:append"*3\r\n"
+  stream:append"$7\r\n"
+  stream:append"message\r\n"
+  stream:append"$5\r\n"
+  stream:append"hello\r\n"
+  stream:append"$7\r\n"
+  stream:append"message\r\n"
+  stream:execute()
+  assert_equal(2, ping_called)
+  assert_true(called)
+  assert_equal("hello",   ch)
+  assert_equal("message", msg)
+
+  stream:append"-ERR only (P)SUBSCRIBE / (P)UNSUBSCRIBE / QUIT allowed in this context\r\n"
+  stream:execute()
+  assert_equal(3, ping_called)
+
 end)
 
 end

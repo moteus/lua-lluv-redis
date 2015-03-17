@@ -68,7 +68,7 @@ for _, t in ipairs(test) do
     local msg, called
 
     stream:on_command(function(self, cmd)
-      assert_equal(stream, self)
+      assert_equal(SELF, self)
       msg = CMD(cmd)
       return true
     end)
