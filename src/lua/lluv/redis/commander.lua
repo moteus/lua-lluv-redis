@@ -27,28 +27,35 @@ local function is_callable(f) return (type(f) == 'function') and f end
 -- array               -- MGET {key1, key2}
 -- multiple arguments  -- SET  key value timeout
 
-local REQUEST = {
-  arg = function(cmd, arg, cb)
-    return {cmd, arg}, cb or dummy
+local REQUEST REQUEST = {
+  arg = function(cmd, arg1, cb)
+    assert(arg1 ~= nil and not is_callable(arg1))
+    assert(cb == nil or is_callable(cb))
+    return {cmd, tostring(arg1)}, cb or dummy
   end;
-  
+
   arg_or_array = function(cmd, args, cb)
+    assert(args ~= nil and not is_callable(args))
+    assert(cb == nil or is_callable(cb))
+
     local res
     if type(args) == "table" then
       res = {cmd}
-      for i = 1, #args do res[i+1] = args[i] end
-      return res
-    else res = {cmd, args} end
+      for i = 1, #args do res[i+1] = tostring(args[i]) end
+    else res = {cmd, tostring(args)} end
     return res, cb or dummy
   end;
 
   arg_or_hash = function(cmd, args, cb)
+    assert(args ~= nil and not is_callable(args))
+    assert(cb == nil or is_callable(cb))
+
     local res
     if type(args) == "table" then
       res = {cmd}
       for k, v in pairs(args) do
-        res[#res + 1] = k
-        res[#res + 1] = v
+        res[#res + 1] = tostring(k)
+        res[#res + 1] = tostring(v)
       end
     else res = {cmd, args} end
     return res, cb or dummy
@@ -64,7 +71,17 @@ local REQUEST = {
       cb = dummy
     end
 
+    for i = 2, #args do args[i] = tostring(args[i]) end
+
     return args, cb
+  end;
+
+  array_or_multi = function(...)
+    local a = select(2, ...)
+    if type(a) == "table" then
+      return REQUEST.arg_or_array(...)
+    end
+    return REQUEST.multi_args(...)
   end;
 
   none = function(cmd, cb) return cmd, cb or dummy end;
@@ -80,7 +97,7 @@ local REQUEST = {
 -- NULL   GET nonexists
 -- Custom INFO
 
-local RESPONSE = {
+local RESPONSE RESPONSE = {
   string_bool = function(err, resp)
     return err, resp == 'OK'
   end;
@@ -142,15 +159,16 @@ function RedisCommander:each_command(fn)
 end
 
 RedisCommander
-  :add_command("QUIT",    REQUEST.none,        RESPONSE.string_bool )
-  :add_command("PING",    REQUEST.none,        RESPONSE.pass        )
-  :add_command("ECHO",    REQUEST.arg,         RESPONSE.pass        )
-  :add_command("EXISTS",  REQUEST.arg,         RESPONSE.number_bool )
-  :add_command("SET",     REQUEST.multi_args,  RESPONSE.string_bool )
-  :add_command("GET",     REQUEST.arg,         RESPONSE.pass        )
-  :add_command("MULTI",   REQUEST.none,        RESPONSE.string_bool )
-  :add_command("EXEC",    REQUEST.none,        RESPONSE.pass        )
-  :add_command("DISCARD", REQUEST.none,        RESPONSE.string_bool )
+  :add_command("QUIT",    REQUEST.none,             RESPONSE.string_bool )
+  :add_command("PING",    REQUEST.none,             RESPONSE.pass        )
+  :add_command("ECHO",    REQUEST.arg,              RESPONSE.pass        )
+  :add_command("EXISTS",  REQUEST.arg,              RESPONSE.number_bool )
+  :add_command("SET",     REQUEST.multi_args,       RESPONSE.string_bool )
+  :add_command("GET",     REQUEST.arg,              RESPONSE.pass        )
+  :add_command("DEL",     REQUEST.array_or_multi,   RESPONSE.pass        )
+  :add_command("MULTI",   REQUEST.none,             RESPONSE.string_bool )
+  :add_command("EXEC",    REQUEST.none,             RESPONSE.pass        )
+  :add_command("DISCARD", REQUEST.none,             RESPONSE.string_bool )
 end
 
 return {
