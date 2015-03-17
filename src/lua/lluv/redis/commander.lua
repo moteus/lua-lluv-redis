@@ -98,23 +98,28 @@ function RedisCommander:__init(stream)
   return self
 end
 
-local function IMPLEMENT(name, request, response)
+function RedisCommander:add_command(name, request, response)
+  response = response or RESPONSE.pass
+
   local decoder = function(err, data)
     if err then return err, data end --! @todo Build error object
     return response(err, data)
   end
 
-  RedisCommander[name:lower()] = function(self, ...)
+  self[name:lower()] = function(self, ...)
     local cmd, cb = request(name, ...)
     self._stream:command(cmd, cb, decoder)
   end
+
+  return self
 end
 
-IMPLEMENT("PING",   REQUEST.none,        RESPONSE.pass        )
-IMPLEMENT("ECHO",   REQUEST.arg,         RESPONSE.pass        )
-IMPLEMENT("EXISTS", REQUEST.arg,         RESPONSE.number_bool )
-IMPLEMENT("SET",    REQUEST.multi_args,  RESPONSE.string_bool )
-IMPLEMENT("GET",    REQUEST.arg,         RESPONSE.pass        )
+RedisCommander
+  :add_command("PING",   REQUEST.none,        RESPONSE.pass        )
+  :add_command("ECHO",   REQUEST.arg,         RESPONSE.pass        )
+  :add_command("EXISTS", REQUEST.arg,         RESPONSE.number_bool )
+  :add_command("SET",    REQUEST.multi_args,  RESPONSE.string_bool )
+  :add_command("GET",    REQUEST.arg,         RESPONSE.pass        )
 
 end
 
