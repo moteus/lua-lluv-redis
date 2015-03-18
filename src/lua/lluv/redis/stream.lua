@@ -155,7 +155,11 @@ function RedisCmdStream:__init(cb_self)
   self._queue  = ut.Queue.new()
   self._txn    = ut.Queue.new()
   self._self   = cb_self or self
+  self._sub    = nil -- fake task to proceed `message` replays
 
+  self._on_halt    = nil
+  self._on_message = nil
+  self._on_command = nil
   return self
 end
 
@@ -220,7 +224,7 @@ function RedisCmdStream:_next_data_task()
   local queue = self._queue
 
   while true do
-    local task = queue:peek() or self._subscribe_task
+    local task = queue:peek() or self._sub
 
     if not task then
       if not self._buffer:empty() then
@@ -298,7 +302,7 @@ function RedisCmdStream:execute()
 
       -- we are in SUBSCRIBE mode. So in fact we can get only errors or array with message
       -- I stay check for `message` just in case this would be changed in the future
-      if self._subscribe_task and task[DATA][1] == 'message' then
+      if self._sub and task[DATA][1] == 'message' then
         -- published message should not change task queue.
         -- so we just `clear` task object
         local channel, data = task[DATA][2], task[DATA][3]
@@ -333,10 +337,10 @@ function RedisCmdStream:execute()
           task[CMD] == 'PSUBSCRIBE' or task[CMD] == 'PUNSUBSCRIBE' 
         then
           local channels = task[DATA][3]
-          if channels == 0 then self._subscribe_task = nil
-          elseif not self._subscribe_task then
+          if channels == 0 then self._sub = nil
+          elseif not self._sub then
             -- we create fake task
-            self._subscribe_task = {nil, nil, nil, cmd_name, decoder or pass}
+            self._sub = {nil, nil, nil, cmd_name, decoder or pass}
           end
 
           cb(self._self, decoder(nil, task[DATA]))
