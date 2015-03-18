@@ -17,21 +17,22 @@ end)
 ```Lua
 cli:open(function()
   cli:multi(function(cli, err, data) -- begin transaction
-    print("MULTI:", data)
-
-    -- we can proceed each command in separate callback
-    cli:set("a", "10", function(cli, err, data)
-      print("SET:", data)
-    end)
-
-    cli:ping() --or we can ignore command callback
-
-    cli:exec(function(cli, err, res) -- end transaction
-      -- and proceed all results in exec callback
-      for k, v in ipairs(res) do print("CMD #" .. k, v) end
-
-    end)
+    print("MULTI:", err or data)
   end)
+
+  -- we can proceed each command in separate callback
+  cli:set("a", "10", function(cli, err, data)
+    print("SET:", data)
+  end)
+
+  cli:ping() --or we can ignore callback
+
+  cli:exec(function(cli, err, res)   -- end transaction
+    -- proceed all results in transaction
+    for k, v in ipairs(res) do print("CMD #" .. k, v) end
+  end)
+
+  cli:quit()
 end)
 ```
 
