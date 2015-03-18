@@ -5,6 +5,12 @@ local cli = redis.Connection.new()
 
 cli:open(function()
   cli:multi(function(cli, err, data) -- begin transaction
+    if err and err:cat() == 'REDIS' then
+      -- we try begin transaction in wrong state
+      -- application error and should be fixed in client code
+      error("Please fix me")
+    end
+
     print("MULTI:", err or data)
   end)
 
