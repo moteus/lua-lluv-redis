@@ -596,21 +596,26 @@ it('should commit empty txn', function()
 end)
 
 it('should call all callbacks on exec', function()
+  local called = 0
   stream:on_command(PASS)
 
   stream:command("MULTI", function(self, err, res)
+    called = assert_equal(0, called) + 1
     assert_equal("OK", res)
   end)
 
   stream:command("INCR foo", function(self, err, res)
+    called = assert_equal(1, called) + 1
     assert_equal(1, res)
   end)
 
   stream:command("INCR bar", function(self, err, res)
+    called = assert_equal(2, called) + 1
     assert_equal(2, res)
   end)
 
   stream:command("EXEC", function(self, err, res)
+    called = assert_equal(3, called) + 1
     assert_table(res)
     assert_equal(1, res[1])
     assert_equal(2, res[2])
@@ -622,24 +627,30 @@ it('should call all callbacks on exec', function()
   stream:append"*2\r\n:1\r\n:2\r\n"
 
   stream:execute()
+  assert_equal(4, called)
 end)
 
 it('should call all callbacks on discard', function()
+  local called = 0
   stream:on_command(PASS)
 
   stream:command("MULTI", function(self, err, res)
+    called = assert_equal(0, called) + 1
     assert_equal("OK", res)
   end)
 
   stream:command("INCR foo", function(self, err, res)
+    called = assert_equal(1, called) + 1
     assert_equal("DISCARD", err)
   end)
 
   stream:command("INCR bar", function(self, err, res)
+    called = assert_equal(2, called) + 1
     assert_equal("DISCARD", err)
   end)
 
   stream:command("DISCARD", function(self, err, res)
+    called = assert_equal(3, called) + 1
     assert_equal("OK", res)
   end)
 
@@ -649,6 +660,43 @@ it('should call all callbacks on discard', function()
   stream:append"+OK\r\n"
 
   stream:execute()
+  assert_equal(4, called)
+end)
+
+it('should call all callbacks on watch fail', function()
+  local called = 0
+  stream:on_command(PASS)
+
+  stream:command("MULTI", function(self, err, res)
+    called = assert_equal(0, called) + 1
+    assert_equal("OK", res)
+  end)
+
+  stream:command("INCR foo", function(self, err, res)
+    called = assert_equal(1, called) + 1
+    assert_nil(err)
+    assert_nil(res)
+  end)
+
+  stream:command("INCR bar", function(self, err, res)
+    called = assert_equal(2, called) + 1
+    assert_nil(err)
+    assert_nil(res)
+  end)
+
+  stream:command("EXEC", function(self, err, res)
+    called = assert_equal(3, called) + 1
+    assert_nil(err)
+    assert_nil(res)
+  end)
+
+  stream:append"+OK\r\n"
+  stream:append"+QUEUED\r\n"
+  stream:append"+QUEUED\r\n"
+  stream:append"*-1\r\n"
+
+  stream:execute()
+  assert_equal(4, called)
 end)
 
 it('should ingnore failed commands', function()
