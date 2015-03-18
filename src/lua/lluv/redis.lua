@@ -90,6 +90,10 @@ function Connection:close(err)
   self._stream, self._cnn = nil
 end
 
+function Connection:pipeline()
+  return self._commander:pipeline()
+end
+
 function Connection:on_error(handler)
   self._on_error = handler
   return self
