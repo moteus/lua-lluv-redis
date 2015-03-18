@@ -304,6 +304,8 @@ RedisCommander
   :add_command("EXEC",                 n_args(0, 0),               RESPONSE.pass               )
   :add_command("DISCARD",              n_args(0, 0),               RESPONSE.string_bool        )
 
+  :add_command("HGETALL",              n_args(1, 1),               RESPONSE.hash               )
+
   :add_command("PUBLISH",              n_args(2, 2),               RESPONSE.pass               )
   :add_command("SUBSCRIBE",            n_args_then_array(0),       RESPONSE.pass               )
   :add_command("PSUBSCRIBE",           n_args_then_array(0),       RESPONSE.pass               )

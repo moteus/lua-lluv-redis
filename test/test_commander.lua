@@ -204,6 +204,29 @@ it("multiple args as array", function()
   assert_true(called)
 end)
 
+it("result as hash", function()
+  local cmd, called
+  stream:on_command(PASS)
+
+  command:hgetall("h", function(self, err, t)
+    called = true
+    assert_table(t)
+    assert_equal("v1", t.f1)
+    assert_equal("v2", t.f2)
+  end)
+
+  local res = C{
+    "*4",
+      "$2","f1",
+      "$2","v1",
+      "$2","f2",
+      "$2","v2",
+  }
+  stream:append(res):execute()
+
+  assert_true(called)
+end)
+
 end
 
 local _ENV = TEST_CASE'redis pipeline command' if ENABLE then
