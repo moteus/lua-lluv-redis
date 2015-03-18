@@ -75,6 +75,12 @@ local I, N = 3, 1
 
 local function pass(err, data) return err, data end
 
+local function iclone(t, n)
+  local r = {}
+  for i = 1, n or #t do r[i] = t[i] end
+  return r
+end
+
 local function decode_line(line)
   local p, d = line:sub(1, 1), line:sub(2)
   if p == '+' then return p, d end
@@ -376,14 +382,18 @@ function RedisCmdStream:pipeline_command(cmd, cb, decoder)
   return cmd, task
 end
 
-function RedisCmdStream:pipeline(cmd, tasks)
+function RedisCmdStream:pipeline(cmd, tasks, multiple)
   if self:_on_command(flat(cmd)) then
-    for i = 1, #tasks do
-      local task = tasks[i]
-      self._queue:push(task)
+    if multiple then
+      for i = 1, #tasks do
+        self._queue:push(iclone(tasks[i], 5))
+      end
+    else
+      for i = 1, #tasks do
+        self._queue:push(tasks[i])
+      end
     end
   end
-
   return self
 end
 

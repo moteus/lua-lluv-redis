@@ -7,10 +7,12 @@ local RedisCommander = require "lluv.redis.commander"
 local utils          = require "utils"
 local TEST_CASE      = require "lunit".TEST_CASE
 
-local pcall, error, type, table, ipairs = pcall, error, type, table, ipairs
+local pcall, error, type, table, ipairs, print = pcall, error, type, table, ipairs, print
 local RUN = utils.RUN
 local IT, CMD, PASS = utils.IT, utils.CMD, utils.PASS
 local nreturn, is_equal = utils.nreturn, utils.is_equal
+
+local C = function(t) return table.concat(t, '\r\n') .. '\r\n' end
 
 local ENABLE = true
 
@@ -25,8 +27,6 @@ function setup()
   stream  = assert(RedisStream.new(SELF))
   command = assert(RedisCommander.new(stream))
 end
-
-local C = function(t) return table.concat(t, '\r\n') .. '\r\n' end
 
 local test = {
   { "PING",
@@ -139,6 +139,7 @@ it("multiple args with single argument", function()
 end)
 
 it("multiple args with single argument without callback", function()
+  local cmd
   stream:on_command(function(_, msg)
     cmd = CMD(msg)
     return true
@@ -171,6 +172,7 @@ it("multiple args with two arguments", function()
 end)
 
 it("multiple args with two arguments without callback", function()
+  local cmd
   stream:on_command(function(_, msg)
     cmd = CMD(msg)
     return true
@@ -200,6 +202,94 @@ it("multiple args as array", function()
   stream:append(":1\r\n"):execute()
 
   assert_true(called)
+end)
+
+end
+
+local _ENV = TEST_CASE'redis pipeline command' if ENABLE then
+
+local it = IT(_ENV or _M)
+
+local stream, command, pipeline
+local SELF = {}
+
+function setup()
+  stream   = assert(RedisStream.new(SELF))
+  command  = assert(RedisCommander.new(stream))
+  pipeline = assert(command:pipeline())
+end
+
+it('should execute multiple command', function()
+  local called, cmd = 0
+  stream:on_command(function(_, msg)
+    cmd = CMD(msg)
+    return true
+  end)
+  
+  pipeline:ping(function()
+    called = assert_equal(0, called) + 1
+  end)
+
+  pipeline:ping(function()
+    called = assert_equal(1, called) + 1
+  end)
+
+  assert_nil(cmd)
+
+  pipeline:execute()
+
+  local res = C{"PING", "PING"}
+  assert_equal(res, cmd)
+
+  stream:append"+PONG\r\n"
+  stream:append"+PONG\r\n"
+  stream:execute()
+
+  assert_equal(2, called)
+end)
+
+it('should execute multiple times', function()
+  local called, cmd = 0
+  local req = C{
+    "*2", "$4", "ECHO", "$9", "message#1",
+    "*2", "$4", "ECHO", "$9", "message#2",
+  }
+  local res = C{
+    "$9", "message#1",
+    "$9", "message#2",
+  }
+
+  stream:on_command(function(_, msg)
+    cmd = CMD(msg)
+    return true
+  end)
+
+  pipeline:echo("message#1", function(self, err, data)
+    called = assert_equal(0, called) + 1
+    assert_equal("message#1", data)
+  end)
+
+  pipeline:echo("message#2", function()
+    called = assert_equal(1, called) + 1
+  end)
+
+  assert_nil(cmd)
+
+  pipeline:execute(true)
+  assert_equal(req, cmd)
+
+  stream:append(res)
+  stream:execute()
+  assert_equal(2, called)
+
+  called, cmd = 0
+
+  pipeline:execute(true)
+  assert_equal(req, cmd)
+
+  stream:append(res)
+  stream:execute()
+  assert_equal(2, called)
 end)
 
 end

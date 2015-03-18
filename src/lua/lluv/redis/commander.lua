@@ -119,6 +119,8 @@ local RESPONSE RESPONSE = {
   end;
 }
 
+local RedisPipeline
+
 local RedisCommander = ut.class() do
 
 RedisCommander._commands = {}
@@ -142,7 +144,12 @@ function RedisCommander:add_command(name, request, response)
 
   self[name:lower()] = function(self, ...)
     local cmd, cb = request(name, ...)
-    self._stream:command(cmd, cb, decoder)
+    return self._stream:command(cmd, cb, decoder)
+  end
+
+  self["_pipeline_" .. name:lower()] = function(self, ...)
+    local cmd, cb = request(name, ...)
+    return self._stream:pipeline_command(cmd, cb, decoder)
   end
 
   self._commands[name] = true
@@ -156,6 +163,14 @@ function RedisCommander:each_command(fn)
     for cmd in pairs(self._commands) do fn(cmd, false) end
   end
   return self
+end
+
+function RedisCommander:_pipeline(...)
+  return self._stream:pipeline(...)
+end
+
+function RedisCommander:pipeline()
+  return RedisPipeline.new(self)
 end
 
 RedisCommander
@@ -175,6 +190,51 @@ RedisCommander
   :add_command("PSUBSCRIBE",           REQUEST.array_or_multi,         RESPONSE.pass               )
   :add_command("UNSUBSCRIBE",          REQUEST.array_or_multi,         RESPONSE.pass               )
   :add_command("PUNSUBSCRIBE",         REQUEST.array_or_multi,         RESPONSE.pass               )
+end
+
+RedisPipeline = ut.class() do
+
+
+local function args_clone(t)
+  local r = {}
+  for i = 1, #t do
+    r[i] = iclone(t[i], 4)
+  end
+end
+
+function RedisPipeline:__init(commander)
+  self._commander = assert(commander)
+  self._cmd, self._arg = {},{}
+
+  return self
+end
+
+function RedisPipeline:add_command(name)
+  local n = '_pipeline_' .. name:lower()
+  self[name:lower()] = function(self, ...)
+    local cmd, args = self._commander[n](self._commander, ...)
+    if cmd then
+      self._cmd[#self._cmd + 1] = cmd
+      self._arg[#self._arg + 1] = args
+    end
+    return self
+  end
+end
+
+RedisCommander:each_command(function(name)
+  RedisPipeline:add_command(name)
+end)
+
+function RedisPipeline:execute(preserve)
+  self._commander:_pipeline(self._cmd, self._arg, preserve)
+
+  if not preserve then
+    self._cmd, self._arg = {}, {}
+  end
+
+  return self
+end
+
 end
 
 return {
