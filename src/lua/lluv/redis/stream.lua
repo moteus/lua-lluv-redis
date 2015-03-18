@@ -128,7 +128,7 @@ end
 
 local function encode_cmd(t)
   if type(t) == 'string' then return t .. EOL, t end
-  return encode(t), t[1]
+  return table.concat(encode(t)), t[1]
 end
 
 local function is_callable(f) return (type(f) == 'function') and f end
