@@ -194,14 +194,6 @@ end
 
 RedisPipeline = ut.class() do
 
-
-local function args_clone(t)
-  local r = {}
-  for i = 1, #t do
-    r[i] = iclone(t[i], 4)
-  end
-end
-
 function RedisPipeline:__init(commander)
   self._commander = assert(commander)
   self._cmd, self._arg = {},{}
