@@ -6,7 +6,7 @@ local RedisStream = require "lluv.redis.stream"
 local utils       = require "utils"
 local TEST_CASE   = require "lunit".TEST_CASE
 
-local pcall, error, type, table = pcall, error, type, table
+local pcall, error, type, table, tostring, print, debug = pcall, error, type, table, tostring, print, debug
 local RUN = utils.RUN
 local IT, CMD, PASS = utils.IT, utils.CMD, utils.PASS
 local nreturn, is_equal = utils.nreturn, utils.is_equal
@@ -198,14 +198,18 @@ it("should decode error", function()
   stream:on_command(PASS)
 
   local err, res
-  stream:command("PING", function(self, ...)
+  stream:command("PING2", function(self, ...)
     err, res = ...
   end)
 
   stream:append("-ERR unknown command 'PING2'\r\n"):execute()
 
-  assert_equal("ERR", err)
-  assert_equal("unknown command 'PING2'", res)
+  assert(RedisStream.IsError(err))
+  assert_equal(0,                         err:no()  )
+  assert_equal('REDIS',                   err:cat() )
+  assert_equal('ERR',                     err:name())
+  assert_equal("unknown command 'PING2'", err:msg() )
+  assert_equal('PING2',                   err:ext() )
 end)
 
 it("should decode number", function()
@@ -258,7 +262,23 @@ it("should decode array", function()
 
   stream:execute()
 
-  assert(is_equal({{1,2,3},{'Foo',{error = 'Bar'},'foobar'}}, res))
+  local a = assert_table(res)[1]
+  assert_table(a)
+  assert_equal(1, a[1])
+  assert_equal(2, a[2])
+  assert_equal(3, a[3])
+
+  local a = assert_table(res)[2]
+  assert_table(a)
+  assert_equal('Foo',        a[1]       )
+  assert(RedisStream.IsError(a[2])      )
+  assert_equal('REDIS',      a[2]:cat() )
+  assert_equal(0,            a[2]:no()  )
+  assert_equal('Bar',        a[2]:name())
+  assert_equal('',           a[2]:msg() )
+  assert_equal('***',        a[2]:ext() )
+  assert_equal('foobar',     a[3])
+
 end)
 
 it("should decode array by chunks", function()
@@ -290,7 +310,22 @@ it("should decode array by chunks", function()
   end
   stream:append(str:sub(-1)):execute()
 
-  assert(is_equal({{1,2,3},{'Foo',{error = 'Bar'},'foobar'}}, res))
+  local a = assert_table(res)[1]
+  assert_table(a)
+  assert_equal(1, a[1])
+  assert_equal(2, a[2])
+  assert_equal(3, a[3])
+
+  local a = assert_table(res)[2]
+  assert_table(a)
+  assert_equal('Foo',        a[1]       )
+  assert(RedisStream.IsError(a[2])      )
+  assert_equal('REDIS',      a[2]:cat() )
+  assert_equal(0,            a[2]:no()  )
+  assert_equal('Bar',        a[2]:name())
+  assert_equal('',           a[2]:msg() )
+  assert_equal('***',        a[2]:ext() )
+  assert_equal('foobar',     a[3])
 end)
 
 it("should decode bulk by chunks", function()
@@ -501,8 +536,12 @@ it("pass error to exec", function()
   stream:on_command(PASS)
   stream:command("EXEC", function(cli, err, data)
     called = true
-    assert_equal("ERR", err)
-    assert_equal("EXEC without MULTI", data)
+    assert(RedisStream.IsError(err))
+    assert_equal(0,                     err:no()  )
+    assert_equal('REDIS',               err:cat() )
+    assert_equal('ERR',                 err:name())
+    assert_equal("EXEC without MULTI",  err:msg() )
+    assert_equal('EXEC',                err:ext() )
   end)
 
   stream:append("-ERR EXEC without MULTI\r\n"):execute()
@@ -623,9 +662,13 @@ it('should ingnore failed commands', function()
     assert_equal("DISCARD", err)
   end)
 
-  stream:command("INCR a b c", function(self, err, res)
-    assert_equal("ERR", err)
-    assert_equal("wrong number of arguments for 'incr' command", res)
+  stream:command({"INCR", "a", "b", "c"}, function(self, err, res)
+    assert(RedisStream.IsError(err))
+    assert_equal(0,                                               err:no()  )
+    assert_equal('REDIS',                                         err:cat() )
+    assert_equal('ERR',                                           err:name())
+    assert_equal("wrong number of arguments for 'incr' command",  err:msg() )
+    assert_equal('INCR',                                          err:ext() )
   end)
 
   stream:command("DISCARD", function(self, err, res)
@@ -652,8 +695,12 @@ it('should pass error to command callback', function()
   end)
 
   stream:command("LPOP a", function(self, err, res)
-    assert_equal("ERR", err)
-    assert_equal("Operation against a key holding the wrong kind of value", res)
+    assert(RedisStream.IsError(err))
+    assert_equal(0,                                                         err:no()  )
+    assert_equal('REDIS',                                                   err:cat() )
+    assert_equal('ERR',                                                     err:name())
+    assert_equal("Operation against a key holding the wrong kind of value", err:msg() )
+    assert_equal('EXEC',                                                    err:ext() )
   end)
 
   stream:command("EXEC", function(self, err, res, cmd_err)
@@ -662,8 +709,14 @@ it('should pass error to command callback', function()
     assert_table(cmd_err)
     assert_nil  (           cmd_err[1])
     assert_equal("OK",          res[1])
-    assert_equal(ERR.error, cmd_err[2])
-    assert_equal(ERR.info,      res[2])
+
+    local err = cmd_err[2]
+    assert(RedisStream.IsError(err))
+    assert_equal(0,         err:no()  )
+    assert_equal('REDIS',   err:cat() )
+    assert_equal(ERR.error, err:name())
+    assert_equal(ERR.info,  err:msg() )
+    assert_equal('EXEC',    err:ext() )
   end)
 
   stream:append"+OK\r\n"
@@ -776,8 +829,17 @@ it('should subscribe', function()
   assert_equal("message", msg)
 end)
 
-it('should fail with unexpected messages', function()
+it('should halt with unexpected messages', function()
+  local halt_called
   stream:on_command(PASS):on_message(PASS)
+  :on_halt(function(self, err)
+    halt_called = true
+    assert(RedisStream.IsError(err))
+    assert_equal('REDIS',  err:cat())
+    assert_equal('EPROTO', err:name())
+    assert_match('REDIS',  tostring(err))
+    assert_match('EPROTO', tostring(err))
+  end)
 
   stream:append"*3\r\n"
   stream:append"$7\r\n"
@@ -787,18 +849,26 @@ it('should fail with unexpected messages', function()
   stream:append"$7\r\n"
   stream:append"message\r\n"
 
-  assert_error(function()
+  assert_pass(function()
     stream:execute()
   end)
-
+  assert_true(halt_called)
 end)
 
 it('should fail with message after unsubscribe', function()
-  local ch, msg, called
+  local ch, msg, called, halt_called
   stream:on_command(PASS)
   :on_message(function(self, channel, message)
     called = true
     ch, msg = channel, message
+  end)
+  :on_halt(function(self, err)
+    halt_called = true
+    assert(RedisStream.IsError(err))
+    assert_equal('REDIS',  err:cat())
+    assert_equal('EPROTO', err:name())
+    assert_match('REDIS',  tostring(err))
+    assert_match('EPROTO', tostring(err))
   end)
 
   stream:command({"SUBSCRIBE", "hello"}, PASS)
@@ -841,10 +911,10 @@ it('should fail with message after unsubscribe', function()
   stream:append"hello\r\n"
   stream:append"$7\r\n"
   stream:append"message\r\n"
-  assert_error(function()
+  assert_pass(function()
     stream:execute()
   end)
-
+  assert_true(halt_called)
 end)
 
 it('should proceed error responses in sub mode', function()
@@ -862,8 +932,13 @@ it('should proceed error responses in sub mode', function()
   stream:command("PING", function(self, err, data)
     assert(not ping_called)
     ping_called = 1
-    assert_equal(err,  "ERR")
-    assert_equal(data, "only (P)SUBSCRIBE / (P)UNSUBSCRIBE / QUIT allowed in this context")
+
+    assert(RedisStream.IsError(err))
+    assert_equal(0,                                                                   err:no()  )
+    assert_equal('REDIS',                                                             err:cat() )
+    assert_equal('ERR',                                                               err:name())
+    assert_equal("only (P)SUBSCRIBE / (P)UNSUBSCRIBE / QUIT allowed in this context", err:msg() )
+    assert_equal('PING',                                                              err:ext() )
   end)
 
   stream:append"*3\r\n"
@@ -880,15 +955,23 @@ it('should proceed error responses in sub mode', function()
   stream:command("PING", function(self, err, data)
     assert_equal(1, ping_called)
     ping_called = 2
-    assert_equal(err,  "ERR")
-    assert_equal(data, "only (P)SUBSCRIBE / (P)UNSUBSCRIBE / QUIT allowed in this context")
+    assert(RedisStream.IsError(err))
+    assert_equal(0,                                                                   err:no()  )
+    assert_equal('REDIS',                                                             err:cat() )
+    assert_equal('ERR',                                                               err:name())
+    assert_equal("only (P)SUBSCRIBE / (P)UNSUBSCRIBE / QUIT allowed in this context", err:msg() )
+    assert_equal('PING',                                                              err:ext() )
   end)
 
   stream:command("PING", function(self, err, data)
     assert_equal(2, ping_called)
     ping_called = 3
-    assert_equal(err,  "ERR")
-    assert_equal(data, "only (P)SUBSCRIBE / (P)UNSUBSCRIBE / QUIT allowed in this context")
+    assert(RedisStream.IsError(err))
+    assert_equal(0,                                                                   err:no()  )
+    assert_equal('REDIS',                                                             err:cat() )
+    assert_equal('ERR',                                                               err:name())
+    assert_equal("only (P)SUBSCRIBE / (P)UNSUBSCRIBE / QUIT allowed in this context", err:msg() )
+    assert_equal('PING',                                                              err:ext() )
   end)
 
   stream:append"-ERR only (P)SUBSCRIBE / (P)UNSUBSCRIBE / QUIT allowed in this context\r\n"

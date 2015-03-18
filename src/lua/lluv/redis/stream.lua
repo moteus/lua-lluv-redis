@@ -14,6 +14,53 @@ local ut = require "lluv.utils"
 
 local NULL = {}
 
+local RedisError = ut.class() do
+
+function RedisError:__init(no, name, msg, ext)
+  self._no   = no
+  self._name = name
+  self._msg  = msg or ''
+  self._ext  = ext or ''
+  return self
+end
+
+function RedisError:cat() return 'REDIS'     end
+
+function RedisError:no()  return self._no    end
+
+function RedisError:name() return self._name end
+
+function RedisError:msg() return self._msg   end
+
+function RedisError:ext() return self._ext   end
+
+function RedisError:__tostring()
+  local err = string.format("[%s][%s] %s (%d)",
+    self:cat(), self:name(), self:msg(), self:no()
+  )
+  if self:ext() then
+    err = string.format("%s - %s", err, self:ext())
+  end
+  return err
+end
+
+end
+
+local meta = getmetatable
+local function IsRedisError(obj)
+  return meta(obj) == RedisError
+end
+
+local EPROTO = -1
+
+local function RedisError_EPROTO(desc)
+  return RedisError.new(EPROTO, "EPROTO", "Protocol error", desc)
+end
+
+local function RedisError_SERVER(name, msg, cmd)
+  return RedisError.new(0, name, msg or '', cmd)
+end
+
 local RedisCmdStream = ut.class() do
 
 local EOL  = "\r\n"
@@ -40,7 +87,7 @@ end
 
 local function array_context(n)
   return {
-    [0] = {n, 'line', 1}
+    [0] = {n, 'line', 1}, n = n
   }
 end
 
@@ -106,7 +153,7 @@ function RedisCmdStream:__init(cb_self)
   return self
 end
 
-function RedisCmdStream:_decode_array(t)
+function RedisCmdStream:_decode_array(task, t)
   local ctx = t[0]
 
   while ctx[I] <= ctx[N] do
@@ -127,7 +174,8 @@ function RedisCmdStream:_decode_array(t)
       elseif typ == OK or typ == INT then
         t[i], ctx[I] = n, i + 1
       elseif typ == ERR then
-        t[i], ctx[I] = {error = n, info = ext}, i + 1
+        local err = RedisError_SERVER(n, ext, task[CMD])
+        t[i], ctx[I] = err, i + 1
       elseif typ == BULK then
         t[i], ctx[STATE] = n, 'array_string'
       else
@@ -149,7 +197,7 @@ function RedisCmdStream:_decode_array(t)
     end
 
     if ctx[STATE] == 'array' then
-      if not self:_decode_array(t[i]) then
+      if not self:_decode_array(task, t[i]) then
         return
       end
       ctx[STATE], ctx[I] = 'line', i + 1
@@ -168,11 +216,15 @@ function RedisCmdStream:_next_data_task()
   while true do
     local task = queue:peek() or self._subscribe_task
 
-    if not self._buffer:empty() then
-      assert(task, 'RECIVED UNEXPECTED DATA')
+    if not task then
+      if not self._buffer:empty() then
+        local err = RedisError_EPROTO(self._buffer:read_all())
+        self:halt(err)
+      end
+      return
     end
 
-    if not task or task[STATE] then return task end
+    if task[STATE] then return task end
 
     local line = self._buffer:read_line()
     if not line then return end
@@ -195,7 +247,8 @@ function RedisCmdStream:_next_data_task()
       end
     elseif typ == ERR then
       queue:pop()
-      cb(self._self, decoder(data, add))
+      local err = RedisError_SERVER(data, add, task[CMD])
+      cb(self._self, decoder(err))
     elseif typ == INT then
       queue:pop()
       cb(self._self, decoder(nil, data))
@@ -233,7 +286,7 @@ function RedisCmdStream:execute()
       if not data then return end
       task[STATE], task[DATA] = 'BULK_EOL', data
     elseif task[STATE] == 'ARR' then
-      if not self:_decode_array(task[DATA]) then
+      if not self:_decode_array(task, task[DATA]) then
         return
       end
 
@@ -256,11 +309,12 @@ function RedisCmdStream:execute()
             if not task then break end
 
             local err, data
-            if type(t[i]) == "table" and t[i].error then
-              err, data = task[DECODER](t[i].error, t[i].info)
+            if IsRedisError(t[i]) then
+              err, data = task[DECODER](t[i])
             else
               err, data = task[DECODER](nil, t[i])
             end
+
             task[CB](self._self, err, data)
 
             e[i], t[i] = decoder(err, data)
@@ -374,6 +428,8 @@ end
 end
 
 return {
-  new = RedisCmdStream.new;
-  NULL = NULL;
+  new          = RedisCmdStream.new;
+  NULL         = NULL;
+  error        = RedisError.new;
+  IsError      = IsRedisError;
 }
