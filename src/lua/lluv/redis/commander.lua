@@ -26,66 +26,185 @@ local function is_callable(f) return (type(f) == 'function') and f end
 -- hash                -- MSET {key1=value,key2=value}
 -- array               -- MGET {key1, key2}
 -- multiple arguments  -- SET  key value timeout
+-- key array           -- HMGET key {key1, key2}
+-- key multiple        -- HMGET key key1, key2
 
-local REQUEST REQUEST = {
-  arg = function(cmd, arg1, cb)
-    assert(arg1 ~= nil and not is_callable(arg1))
-    assert(cb == nil or is_callable(cb))
-    return {cmd, tostring(arg1)}, cb or dummy
-  end;
+local pack_args = function(...)
+  local n    = select("#", ...)
+  local args = {...}
+  local cb   = args[n]
+  if is_callable(cb) then args[n] = nil
+  else cb = dummy end
+  return args, cb
+end
 
-  arg_or_array = function(cmd, args, cb)
-    assert(args ~= nil and not is_callable(args))
-    assert(cb == nil or is_callable(cb))
-
-    local res
-    if type(args) == "table" then
-      res = {cmd}
-      for i = 1, #args do res[i+1] = tostring(args[i]) end
-    else res = {cmd, tostring(args)} end
-    return res, cb or dummy
-  end;
-
-  arg_or_hash = function(cmd, args, cb)
-    assert(args ~= nil and not is_callable(args))
-    assert(cb == nil or is_callable(cb))
-
-    local res
-    if type(args) == "table" then
-      res = {cmd}
-      for k, v in pairs(args) do
-        res[#res + 1] = tostring(k)
-        res[#res + 1] = tostring(v)
+local function n_args(min, max)
+  if min == max then
+    if min == 0 then
+      return function(cmd, cb)
+        assert(cb == nil or is_callable(cb))
+        return cmd, cb
       end
-    else res = {cmd, args} end
-    return res, cb or dummy
-  end;
-
-  multi_args  = function(...)
-    local n    = select("#", ...)
-    local args = {...}
-    local cb   = args[n]
-    if is_callable(cb) then
-      args[n] = nil
-    else
-      cb = dummy
     end
+  end
 
+  max = max and max + 1 or math.huge
+
+  return function(...)
+    local args, cb = pack_args(...)
+    assert((#args > min) and (#args <= max), "invalid number of arguments")
     for i = 2, #args do args[i] = tostring(args[i]) end
-
     return args, cb
-  end;
+  end
+end
 
-  array_or_multi = function(...)
-    local a = select(2, ...)
-    if type(a) == "table" then
-      return REQUEST.arg_or_array(...)
+local function n_args_then_array(n)
+  n = n + 1 -- command itself
+  n = n + 1 -- arg
+  return function(...)
+    local args, cb = pack_args(...)
+    assert(#args >= n, "not enouth arguments")
+    if #args == n then -- array or single key
+      if type(args[n]) == 'table' then
+        local t = args[n]
+        for i = 1, #t do args[n + i - 1] = t[i] end
+      end
     end
-    return REQUEST.multi_args(...)
-  end;
+    for i = 2, #args do args[i] = tostring(args[i]) end
+    return args, cb
+  end
+end
 
-  none = function(cmd, cb) return cmd, cb or dummy end;
-}
+local function n_args_then_hash(n)
+  n = n + 1 -- command itself
+  n = n + 1 -- arg
+  return function(...)
+    local args, cb = pack_args(...)
+    assert(#args >= n, "not enouth arguments")
+
+    if #args == n then -- hash
+      assert(type(args[n]) == 'table')
+      local t, i = args[n], n
+      for k, v in pairs(t) do
+        args[i]   = k
+        args[i+1] = v
+        i = i + 2
+      end
+    else
+      assert(math.mod(#args - n, 2) ~= 0, "invalid number of arguments")
+    end
+    for i = 2, #args do args[i] = tostring(args[i]) end
+    return args, cb
+  end
+end
+
+local function args_test()
+
+local function n_args_then_array_test()
+  local function CMD(a, b) return table.concat(a, ' '), b end
+  local s = "BITOP AND destkey srckey1 srckey2 srckey3"
+
+  local e, f = CMD(n_args_then_array(2)( "BITOP", "AND", "destkey", {"srckey1", "srckey2", "srckey3"}))
+  assert(e == s, e) assert(f == dummy)
+
+  local e, f = CMD(n_args_then_array(2)( "BITOP", "AND", "destkey", "srckey1", "srckey2", "srckey3" ))
+  assert(e == s) assert(f == dummy)
+
+  local e, f = CMD(n_args_then_array(2)( "BITOP", "AND", "destkey", {"srckey1", "srckey2", "srckey3"}, print))
+  assert(e == s, e) assert(f == print)
+
+  local e, f = CMD(n_args_then_array(2)( "BITOP", "AND", "destkey", "srckey1", "srckey2", "srckey3", print ))
+  assert(e == s) assert(f == print)
+
+  local s = "BITOP AND destkey srckey1"
+
+  local e, f = CMD(n_args_then_array(2)( "BITOP", "AND", "destkey", "srckey1"))
+  assert(e == s) assert(f == dummy)
+
+  local e, f = CMD(n_args_then_array(2)( "BITOP", "AND", "destkey", "srckey1", print ))
+  assert(e == s) assert(f == print)
+
+  assert(not pcall(function() n_args_then_array(2)( "BITOP", "AND", "destkey") end))
+
+  assert(not pcall(function() n_args_then_array(2)( "BITOP", "AND", "destkey", print) end))
+
+  local s = "DEL key1 key2 key3"
+
+  local e, f = CMD(n_args_then_array(0)( "DEL", {"key1", "key2", "key3"}))
+  assert(e == s, e) assert(f == dummy)
+
+  local e, f = CMD(n_args_then_array(0)( "DEL", "key1", "key2", "key3"))
+  assert(e == s, e) assert(f == dummy)
+
+  assert(not pcall(function() n_args_then_array(0)( "DEL" ) end))
+
+  assert(not pcall(function() n_args_then_array(0)( "DEL", print) end))
+end
+
+local function n_args_then_hash_test()
+  local function CMD(a, b) return table.concat(a, ' '), b end
+  local s1 = "HMSET myhash field2 World field1 Hello"
+  local s2 = "HMSET myhash field1 Hello field2 World"
+
+  local e, f = CMD(n_args_then_hash(1)("HMSET", "myhash", "field1", "Hello", "field2", "World"))
+  assert(e == s1 or e == s2, e) assert(f == dummy)
+
+  local e, f = CMD(n_args_then_hash(1)("HMSET", "myhash", {field1 = "Hello", field2 = "World"}))
+  assert(e == s1 or e == s2, e) assert(f == dummy)
+
+  local e, f = CMD(n_args_then_hash(1)("HMSET", "myhash", "field1", "Hello", "field2", "World", print))
+  assert(e == s1 or e == s2, e) assert(f == print)
+
+  local e, f = CMD(n_args_then_hash(1)("HMSET", "myhash", {field1 = "Hello", field2 = "World"}, print))
+  assert(e == s1 or e == s2, e) assert(f == print)
+
+  assert(not pcall(function() n_args_then_hash(1)("HMSET", "myhash", "field1", "Hello", "field2", print) end))
+  assert(not pcall(function() n_args_then_hash(1)("HMSET", "myhash", print) end))
+
+  ----------------------------------------------------
+
+  local s1 = "MSET field2 World field1 Hello"
+  local s2 = "MSET field1 Hello field2 World"
+
+  local e, f = CMD(n_args_then_hash(0)("MSET", "field1", "Hello", "field2", "World"))
+  assert(e == s1 or e == s2, e) assert(f == dummy)
+
+  local e, f = CMD(n_args_then_hash(0)("MSET", {field1 = "Hello", field2 = "World"}))
+  assert(e == s1 or e == s2, e) assert(f == dummy)
+
+  local e, f = CMD(n_args_then_hash(0)("MSET", "field1", "Hello", "field2", "World", print))
+  assert(e == s1 or e == s2, e) assert(f == print)
+
+  local e, f = CMD(n_args_then_hash(0)("MSET", {field1 = "Hello", field2 = "World"}, print))
+  assert(e == s1 or e == s2, e) assert(f == print)
+
+  assert(not pcall(function() n_args_then_hash(0)("MSET", "field1", "Hello", "field2", print) end))
+  assert(not pcall(function() n_args_then_hash(0)("MSET", print) end))
+end
+
+local function n_args_test()
+  local function CMD(a, b) return table.concat(a, ' '), b end
+  local s = "A B C"
+
+  local e, f = CMD(n_args(0, 2)("A", "B", "C"))
+  assert(e == s, e) assert(f == dummy)
+
+  local e, f = CMD(n_args(2, 2)("A", "B", "C"))
+  assert(e == s, e) assert(f == dummy)
+
+  local e, f = CMD(n_args(2)("A", "B", "C"))
+  assert(e == s, e) assert(f == dummy)
+
+  assert(not pcall(function() n_args(0, 1)("A", "B", "C") end))
+  assert(not pcall(function() n_args(1, 1)("A", "B", "C") end))
+  assert(not pcall(function() n_args(3)   ("A", "B", "C") end))
+end
+
+n_args_then_array_test()
+n_args_then_hash_test()
+n_args_test()
+
+end
 
 --- Result variants
 -- Boolean
@@ -174,22 +293,22 @@ function RedisCommander:pipeline()
 end
 
 RedisCommander
-  :add_command("QUIT",                 REQUEST.none,                   RESPONSE.string_bool        )
-  :add_command("PING",                 REQUEST.none,                   RESPONSE.pass               )
-  :add_command("ECHO",                 REQUEST.arg,                    RESPONSE.pass               )
-  :add_command("EXISTS",               REQUEST.arg,                    RESPONSE.number_bool        )
-  :add_command("SET",                  REQUEST.multi_args,             RESPONSE.string_bool        )
-  :add_command("GET",                  REQUEST.arg,                    RESPONSE.pass               )
-  :add_command("DEL",                  REQUEST.array_or_multi,         RESPONSE.pass               )
-  :add_command("MULTI",                REQUEST.none,                   RESPONSE.string_bool        )
-  :add_command("EXEC",                 REQUEST.none,                   RESPONSE.pass               )
-  :add_command("DISCARD",              REQUEST.none,                   RESPONSE.string_bool        )
+  :add_command("QUIT",                 n_args(0, 0),               RESPONSE.string_bool        )
+  :add_command("PING",                 n_args(0, 0),               RESPONSE.pass               )
+  :add_command("ECHO",                 n_args(1, 1),               RESPONSE.pass               )
+  :add_command("EXISTS",               n_args(1, 1),               RESPONSE.number_bool        )
+  :add_command("SET",                  n_args(2, 7),               RESPONSE.string_bool        )
+  :add_command("GET",                  n_args(1, 1),               RESPONSE.pass               )
+  :add_command("DEL",                  n_args_then_array(0),       RESPONSE.pass               )
+  :add_command("MULTI",                n_args(0, 0),               RESPONSE.string_bool        )
+  :add_command("EXEC",                 n_args(0, 0),               RESPONSE.pass               )
+  :add_command("DISCARD",              n_args(0, 0),               RESPONSE.string_bool        )
 
-  :add_command("PUBLISH",              REQUEST.multi_args,             RESPONSE.pass               )
-  :add_command("SUBSCRIBE",            REQUEST.array_or_multi,         RESPONSE.pass               )
-  :add_command("PSUBSCRIBE",           REQUEST.array_or_multi,         RESPONSE.pass               )
-  :add_command("UNSUBSCRIBE",          REQUEST.array_or_multi,         RESPONSE.pass               )
-  :add_command("PUNSUBSCRIBE",         REQUEST.array_or_multi,         RESPONSE.pass               )
+  :add_command("PUBLISH",              n_args(2, 2),               RESPONSE.pass               )
+  :add_command("SUBSCRIBE",            n_args_then_array(0),       RESPONSE.pass               )
+  :add_command("PSUBSCRIBE",           n_args_then_array(0),       RESPONSE.pass               )
+  :add_command("UNSUBSCRIBE",          n_args_then_array(0),       RESPONSE.pass               )
+  :add_command("PUNSUBSCRIBE",         n_args_then_array(0),       RESPONSE.pass               )
 end
 
 RedisPipeline = ut.class() do
@@ -232,4 +351,8 @@ end
 return {
   new      = RedisCommander.new;
   commands = function(...) RedisCommander:each_command(...) end;
+
+  self_test = function()
+    args_test()
+  end;
 }

@@ -294,4 +294,14 @@ end)
 
 end
 
+local _ENV = TEST_CASE'internal self test' if ENABLE then
+
+local it = IT(_ENV or _M)
+
+it('should pass', function()
+  RedisCommander.self_test()
+end)
+
+end
+
 RUN()
