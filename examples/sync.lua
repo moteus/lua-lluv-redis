@@ -15,7 +15,7 @@ local RedisCommander = require "lluv.redis.commander"
 local SyncClient = ut.class() do
 
 function SyncClient:__init(host, port)
-  self._cli = socket.connect("127.0.0.1", 6379)
+  self._cli = socket.connect(host, port)
   self._stm = RedisStream.new(self._cli)
   self._cmd = RedisCommander.new(self._stm)
 
