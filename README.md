@@ -7,7 +7,8 @@
 
 ### lluv client
 ```Lua
-redis.Connection.new():open(function(cli)
+local cli = redis.Connection.new()
+cli:open(function(cli)
   cli:ping(print)
   cli:quit(print)
 end)
@@ -17,7 +18,11 @@ end)
 ```Lua
 cli:open(function()
   cli:multi(function(cli, err, data) -- begin transaction
-    print("MULTI:", err or data)
+    -- We can cat IO/redis error
+    -- if we get redis error that means application error
+    -- try nested transaction or transaction in SUBSCRIBE mode
+    -- so application shoul fix it.
+    assert(not err or err:cat() ~= 'REDIS')
   end)
 
   -- we can proceed each command in separate callback
@@ -28,7 +33,7 @@ cli:open(function()
   cli:ping() --or we can ignore callback
 
   cli:exec(function(cli, err, res)   -- end transaction
-    -- proceed all results in transaction
+    -- and proceed all results in transaction
     for k, v in ipairs(res) do print("CMD #" .. k, v) end
   end)
 
@@ -36,50 +41,24 @@ cli:open(function()
 end)
 ```
 
-### Using low-level parser
-You can use low-level parser to use other IO library.
+### pipeline
+```lua
+-- new pipeline
+p = cli:pipeline()
+  :set(a, 10)
+  :set(b, 20)
 
-```Lua
--- Using stream decoder with lluv
-local uv          = require "lluv"
-local RedisStream = require "lluv.redis.stream"
+-- execute and preserve pipeline
+p:execute(true)
 
-uv.tcp():connect("127.0.0.1", 6379, function(cli, err)
-  local stream stream = RedisStream.new()
-  :on_command(function(self, msg, cb)
-    return cli:write(msg, function(_, err)
-      if err then return stream:halt(err) end
-    end)
-  end)
-  :on_halt(function(self, err)
-    cli:close()
-  end)
+-- append command
+p:set(c, 30)
 
-  cli:start_read(function(cli, err, data)
-    if err then return stream:halt(err) end
-    stream
-      :append(data)
-      :execute()
-  end)
+-- and execute it again
+p:execute() -- execute and clear
 
-  stream:command("PING", function(...)
-    print("PING:", ...)
-  end)
-
-  local msg = '"Hello, world!!!"'
-  stream:command({"ECHO", msg}, function(...)
-    print("ECHO:", ...)
-  end)
-
-  stream:command("PING2", function(...)
-    print("ERROR:", ...)
-  end)
-
-  stream:command("QUIT", function(...)
-    print("QUIT:", ...)
-  end)
-
-end)
-
-uv.run(debug.traceback)
+p -- set new commands and execute
+  :set(a, 20)
+  :set(b, 30)
+  :execute()
 ```
