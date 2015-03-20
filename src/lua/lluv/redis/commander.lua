@@ -40,6 +40,58 @@ local eval = function(...)
   return args, cb
 end
 
+local sort = function(...)
+  local args, cb = pack_args(...)
+  opt = args[3]
+  if type(opt) == "table" and not opt[1] then
+
+    local res = {}
+    if opt.by then
+      res[#res + 1] = "BY"
+      res[#res + 1] = opt.by
+    end
+
+    if opt.limit then
+      res[#res + 1] = "LIMIT"
+      res[#res + 1] = opt.limit[1]
+      res[#res + 1] = opt.limit[2]
+    end
+
+    if opt.get then
+      if type(opt.get) == 'table' then
+        for i = 1, #opt.get do
+          res[#res + 1] = 'GET'
+          res[#res + 1] = opt.get[i]
+        end
+      else
+        res[#res + 1] = 'GET'
+        res[#res + 1] = opt.get
+      end
+    end
+
+    if opt.sort then
+      res[#res + 1] = opt.sort:upper()
+    elseif opt.asc then
+      res[#res + 1] = 'ASC'
+    elseif opt.desc then
+      res[#res + 1] = 'DESC'
+    end
+
+    if opt.alpha then
+      res[#res + 1] = 'ALPHA'
+    end
+
+    if opt.store then
+      res[#res + 1] = 'STORE'
+      res[#res + 1] = opt.store
+    end
+
+    args[3] = res
+  end
+
+  return args, cb
+end
+
 local sbool = function(err, resp)
   return err, resp == 'OK'
 end;
@@ -59,7 +111,6 @@ end;
 local pass  = function(err, resp)
   return err, resp
 end;
-
 
 local RedisPipeline
 
@@ -175,8 +226,8 @@ RedisCommander
   :add_command('EVALSHA',                       {request = eval,   response = pass  }   )	--*	EVALSHA	sha1	numkeys	key [key ...]	arg [arg ...]
   :add_command('EXEC',                          {request = any,    response = pass  }   )	--	EXEC
   :add_command('EXISTS',                        {request = any,    response = nbool }   )	--	EXISTS	key
-  :add_command('EXPIRE',                        {request = any,    response = pass  }   )	--	EXPIRE	key	seconds
-  :add_command('EXPIREAT',                      {request = any,    response = pass  }   )	--	EXPIREAT	key	timestamp
+  :add_command('EXPIRE',                        {request = any,    response = nbool }   )	--	EXPIRE	key	seconds
+  :add_command('EXPIREAT',                      {request = any,    response = nbool }   )	--	EXPIREAT	key	timestamp
   :add_command('FLUSHALL',                      {request = any,    response = pass  }   )	--	FLUSHALL
   :add_command('FLUSHDB',                       {request = any,    response = pass  }   )	--	FLUSHDB
   :add_command('GET',                           {request = any,    response = pass  }   )	--	GET	key
@@ -216,14 +267,14 @@ RedisCommander
   :add_command('MGET',                          {request = any,    response = pass  }   )	--	MGET	key [key ...]
   :add_command('MIGRATE',                       {request = any,    response = pass  }   )	--	MIGRATE	host	port	key	destination-db	timeout	[COPY]	[REPLACE]
   :add_command('MONITOR',                       {request = any,    response = pass  }   )	--	MONITOR
-  :add_command('MOVE',                          {request = any,    response = pass  }   )	--	MOVE	key	db
+  :add_command('MOVE',                          {request = any,    response = nbool }   )	--	MOVE	key	db
   :add_command('MSET',                          {request = any,    response = pass  }   )	--	MSET	key value [key value ...]
   :add_command('MSETNX',                        {request = any,    response = pass  }   )	--	MSETNX	key value [key value ...]
   :add_command('MULTI',                         {request = any,    response = pass  }   )	--	MULTI
   :add_command('OBJECT',                        {request = any,    response = pass  }   )	--	OBJECT	subcommand	[arguments [arguments ...]]
-  :add_command('PERSIST',                       {request = any,    response = pass  }   )	--	PERSIST	key
-  :add_command('PEXPIRE',                       {request = any,    response = pass  }   )	--	PEXPIRE	key	milliseconds
-  :add_command('PEXPIREAT',                     {request = any,    response = pass  }   )	--	PEXPIREAT	key	milliseconds-timestamp
+  :add_command('PERSIST',                       {request = any,    response = nbool }   )	--	PERSIST	key
+  :add_command('PEXPIRE',                       {request = any,    response = nbool }   )	--	PEXPIRE	key	milliseconds
+  :add_command('PEXPIREAT',                     {request = any,    response = nbool }   )	--	PEXPIREAT	key	milliseconds-timestamp
   :add_command('PFADD',                         {request = any,    response = pass  }   )	--	PFADD	key	element [element ...]
   :add_command('PFCOUNT',                       {request = any,    response = pass  }   )	--	PFCOUNT	key [key ...]
   :add_command('PFMERGE',                       {request = any,    response = pass  }   )	--	PFMERGE	destkey	sourcekey [sourcekey ...]
@@ -237,7 +288,7 @@ RedisCommander
   :add_command('QUIT',                          {request = any,    response = pass  }   )	--	QUIT
   :add_command('RANDOMKEY',                     {request = any,    response = pass  }   )	--	RANDOMKEY
   :add_command('RENAME',                        {request = any,    response = pass  }   )	--	RENAME	key	newkey
-  :add_command('RENAMENX',                      {request = any,    response = pass  }   )	--	RENAMENX	key	newkey
+  :add_command('RENAMENX',                      {request = any,    response = nbool }   )	--	RENAMENX	key	newkey
   :add_command('RESTORE',                       {request = any,    response = pass  }   )	--	RESTORE	key	ttl	serialized-value	[REPLACE]
   :add_command('ROLE',                          {request = any,    response = pass  }   )	--	ROLE
   :add_command('RPOP',                          {request = any,    response = pass  }   )	--	RPOP	key
@@ -257,7 +308,7 @@ RedisCommander
   :add_command('SET',                           {request = any,    response = pass  }   )	--*	SET	key	value	[EX seconds]	[PX milliseconds]	[NX|XX]
   :add_command('SETBIT',                        {request = any,    response = pass  }   )	--	SETBIT	key	offset	value
   :add_command('SETEX',                         {request = any,    response = pass  }   )	--	SETEX	key	seconds	value
-  :add_command('SETNX',                         {request = any,    response = pass  }   )	--	SETNX	key	value
+  :add_command('SETNX',                         {request = any,    response = nbool }   )	--	SETNX	key	value
   :add_command('SETRANGE',                      {request = any,    response = pass  }   )	--	SETRANGE	key	offset	value
   :add_command('SHUTDOWN',                      {request = any,    response = pass  }   )	--*	SHUTDOWN	[NOSAVE]	[SAVE]
   :add_command('SINTER',                        {request = any,    response = pass  }   )	--	SINTER	key [key ...]
@@ -267,7 +318,7 @@ RedisCommander
   :add_command('SLOWLOG',                       {request = any,    response = pass  }   )	--	SLOWLOG	subcommand	[argument]
   :add_command('SMEMBERS',                      {request = any,    response = pass  }   )	--	SMEMBERS	key
   :add_command('SMOVE',                         {request = any,    response = pass  }   )	--	SMOVE	source	destination	member
-  :add_command('SORT',                          {request = any,    response = pass  }   )	--*	SORT	key	[BY pattern]	[LIMIT offset count]	[GET pattern [GET pattern ...]]	[ASC|DESC]	[ALPHA]	[STORE destination]
+  :add_command('SORT',                          {request = sort,   response = pass  }   )	--*	SORT	key	[BY pattern]	[LIMIT offset count]	[GET pattern [GET pattern ...]]	[ASC|DESC]	[ALPHA]	[STORE destination]
   :add_command('SPOP',                          {request = any,    response = pass  }   )	--	SPOP	key	[count]
   :add_command('SRANDMEMBER',                   {request = any,    response = pass  }   )	--	SRANDMEMBER	key	[count]
   :add_command('SREM',                          {request = any,    response = pass  }   )	--	SREM	key	member [member ...]

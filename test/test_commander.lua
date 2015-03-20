@@ -98,6 +98,50 @@ local test = {
     A{"key1", "key2", "first", "second"},
     {"key1", "key2", "first", "second", n=4}
   };
+  { "SORT #1",
+    function(cb) command:sort("list", cb) end;
+    A{"SORT","list"},
+    C{"*-1"}, -- ignore result
+    nil
+  };
+  { "SORT #2",
+    function(cb) command:sort("list", "DESC", cb) end;
+    A{"SORT","list", "DESC"},
+    C{"*-1"}, -- ignore result
+    nil
+  };
+  { "SORT #3",
+    function(cb) command:sort("list", {"DESC", "ALPHA"}, cb) end;
+    A{"SORT","list", "DESC", "ALPHA"},
+    C{"*-1"}, -- ignore result
+    nil
+  };
+  { "SORT #4",
+    function(cb) command:sort("list", {desc = true, alpha = true}, cb) end;
+    A{"SORT", "list", "DESC", "ALPHA"},
+    C{"*-1"}, -- ignore result
+    nil
+  };
+  { "SORT #5",
+    function(cb) command:sort("list", {by = "weight_*", get = "object_*"}, cb) end;
+    A{"SORT", "list", "BY", "weight_*", "GET", "object_*"},
+    C{"*-1"}, -- ignore result
+    nil
+  };
+  { "SORT #6",
+    function(cb) command:sort("list", {
+      by = "weight_*",
+      get = {"object_*", "#"},
+      limit = {"1", "10"},
+      sort = 'asc',
+      alpha = true,
+      store = "key1"
+    }, cb) end;
+    A{"SORT", "list", "BY", "weight_*", "LIMIT", "1", "10",
+      "GET", "object_*", "GET", "#", "ASC", "ALPHA", "STORE", "key1"},
+    C{"*-1"}, -- ignore result
+    nil
+  };
 }
 
 for _, t in ipairs(test) do
