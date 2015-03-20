@@ -10,6 +10,7 @@ local pcall, error, type, table, tostring, print, debug = pcall, error, type, ta
 local RUN = utils.RUN
 local IT, CMD, PASS = utils.IT, utils.CMD, utils.PASS
 local nreturn, is_equal = utils.nreturn, utils.is_equal
+local C = function(t) return table.concat(t, '\r\n') .. '\r\n' end
 
 local ENABLE = true
 
@@ -101,18 +102,13 @@ it("should encode command with string args", function()
 
   stream:command({"ECHO", "Hello world"}, PASS)
 
-  assert_equal("*2\r\n$4\r\nECHO\r\n$11\r\nHello world\r\n", msg)
-end)
+  local res = C{
+    "*2",
+    "$4",  "ECHO",
+    "$11", "Hello world"
+  }
 
-it("should encode command with nil args", function()
-  local msg
-  stream:on_command(function(_, cmd)
-    msg = CMD(cmd)
-  end)
-
-  stream:command({"ECHO", RedisStream.NULL}, PASS)
-
-  assert_equal("*2\r\n$4\r\nECHO\r\n*-1\r\n", msg)
+  assert_equal(res, msg)
 end)
 
 it("should encode command with array args", function()
@@ -121,43 +117,62 @@ it("should encode command with array args", function()
     msg = CMD(cmd)
   end)
 
-  local res = table.concat{
-    "*2\r\n",
-      "$4\r\n" .. "ECHO\r\n",
-      "*2\r\n",
-        "*3\r\n",
-          ":1\r\n",
-          ":2\r\n",
-          ":3\r\n",
-        "*3\r\n",
-          "$3\r\n" .. "Foo\r\n",
-          "$3\r\n" .. "Bar\r\n",
-          "$6\r\n" .. "foobar\r\n",
+  local res = C{
+    "*7",
+    "$4", "ECHO",
+    "$1", "1",
+    "$1", "2",
+    "$1", "3",
+    "$3", "Foo",
+    "$3", "Bar",
+    "$6", "foobar",
   }
-  local arg = {{1,2,3},{'Foo','Bar','foobar'}}
 
-  stream:command({"ECHO", arg} , PASS)
+  stream:command({"ECHO", {"1","2","3"}, {'Foo','Bar','foobar'}}, PASS)
 
   assert_equal(res, msg)
 end)
 
-it("should encode command with array with holes", function()
+it("should encode command with nested array args", function()
   local msg
   stream:on_command(function(_, cmd)
     msg = CMD(cmd)
   end)
 
-  local res = table.concat{
-    "*2\r\n",
-      "$4\r\n" .. "ECHO\r\n",
-      "*3\r\n",
-        ":1\r\n",
-        "*-1\r\n",
-        ":3\r\n",
+  local res = C{
+    "*7",
+    "$4", "ECHO",
+    "$1", "1",
+    "$1", "2",
+    "$1", "3",
+    "$3", "Foo",
+    "$3", "Bar",
+    "$6", "foobar",
   }
-  local arg = {1, nil, 3, n = 3}
 
-  stream:command({"ECHO", arg} , PASS)
+  stream:command({{"ECHO", {"1",{"2","3"}}, {'Foo',{'Bar',{'foobar'}}}}}, PASS)
+
+  assert_equal(res, msg)
+end)
+
+it("should encode command with hash args", function()
+  local msg
+  stream:on_command(function(_, cmd)
+    msg = CMD(cmd)
+  end)
+
+  local res = C{
+    "*7",
+    "$4", "ECHO",
+    "$1", "1",
+    "$1", "2",
+    "$1", "3",
+    "$3", "Foo",
+    "$3", "Bar",
+    "$6", "foobar",
+  }
+
+  stream:command({"ECHO", "1","2","3", {Foo = 'Bar'}, 'foobar'}, PASS)
 
   assert_equal(res, msg)
 end)
@@ -168,11 +183,7 @@ it("should encode command with empty array", function()
     msg = CMD(cmd)
   end)
 
-  local res = table.concat{
-    "*2\r\n",
-      "$4\r\n" .. "ECHO\r\n",
-      "*0\r\n",
-  }
+  local res = C{"*1", "$4", "ECHO"}
   local arg = {}
 
   stream:command({"ECHO", arg} , PASS)

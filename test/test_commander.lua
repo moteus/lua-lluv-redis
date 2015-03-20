@@ -13,6 +13,15 @@ local IT, CMD, PASS = utils.IT, utils.CMD, utils.PASS
 local nreturn, is_equal = utils.nreturn, utils.is_equal
 
 local C = function(t) return table.concat(t, '\r\n') .. '\r\n' end
+local S = function(s) return C{"$" .. #s, s} end
+local A = function(a)
+  local t = {"*" .. #a}
+  for i, s in ipairs(a) do
+    t[#t + 1] = "$" .. #s
+    t[#t + 1] = s
+  end
+  return C(t)
+end
 
 local ENABLE = true
 
@@ -37,13 +46,13 @@ local test = {
   };
   { "ECHO",
     function(cb) command:echo("HELLO", cb) end;
-    C{"*2", "$4", "ECHO", "$5", "HELLO"},
-    C{"$5", "HELLO"},
+    A{"ECHO", "HELLO"},
+    S"HELLO",
     "HELLO"
   };
   { "EXISTS true",
     function(cb) command:exists("key", cb) end;
-    C{"*2", "$6", "EXISTS", "$3", "key"},
+    A{"EXISTS", "key"},
     C{":1"},
     true
   };
@@ -55,9 +64,39 @@ local test = {
   };
   { "SET #1",
     function(cb) command:set("key", "value", cb) end;
-    C{"*3", "$3", "SET", "$3", "key", "$5", "value"},
+    A{"SET", "key", "value"},
     C{"+OK"},
-    true
+    "OK"
+  };
+  { "EVAL #1",
+    function(cb) command:eval("return {KEYS[1],KEYS[2],ARGV[1],ARGV[2]}", "2", "key1", "key2", "first", "second", cb) end;
+    A{
+      "EVAL",
+      "return {KEYS[1],KEYS[2],ARGV[1],ARGV[2]}",
+      "2", "key1", "key2", "first", "second"
+    },
+    A{"key1", "key2", "first", "second"},
+    {"key1", "key2", "first", "second", n=4}
+  };
+  { "EVAL #2",
+    function(cb) command:eval("return {KEYS[1],KEYS[2],ARGV[1],ARGV[2]}", "2", {"key1", "key2"}, {"first", "second"}, cb) end;
+    A{
+      "EVAL",
+      "return {KEYS[1],KEYS[2],ARGV[1],ARGV[2]}",
+      "2", "key1", "key2", "first", "second"
+    },
+    A{"key1", "key2", "first", "second"},
+    {"key1", "key2", "first", "second", n=4}
+  };
+  { "EVAL #4",
+    function(cb) command:eval("return {KEYS[1],KEYS[2],ARGV[1],ARGV[2]}", {"key1", "key2"}, {"first", "second"}, cb) end;
+    A{
+      "EVAL",
+      "return {KEYS[1],KEYS[2],ARGV[1],ARGV[2]}",
+      "2", "key1", "key2", "first", "second"
+    },
+    A{"key1", "key2", "first", "second"},
+    {"key1", "key2", "first", "second", n=4}
   };
 }
 
@@ -72,11 +111,15 @@ for _, t in ipairs(test) do
       msg = CMD(cmd)
       return true
     end)
-    
-    FN(function(self, err, data)
+
+    FN(function(self, err, data, ...)
       called = true
-      assert_equal(SELF, self)
-      assert_equal(RESULT, data)
+      if type(RESULT) == "table" then
+        assert_table(data)
+        assert(is_equal(RESULT, data))
+      else
+        assert_equal(RESULT, data)
+      end
     end)
 
     assert_equal(REQUEST, msg)
@@ -90,21 +133,21 @@ end
 
 it("echo no args", function()
   stream:on_command(PASS)
-  assert_error(function()
+  assert_pass(function()
     command:echo(PASS)
   end)
 end)
 
 it("echo with multiple args", function()
   stream:on_command(PASS)
-  assert_error(function()
+  assert_pass(function()
     command:echo("HELLO", "WORLD", PASS)
   end)
 end)
 
 it("echo with multiple args and without cb", function()
   stream:on_command(PASS)
-  assert_error(function()
+  assert_pass(function()
     command:echo("HELLO", "WORLD")
   end)
 end)
@@ -313,16 +356,6 @@ it('should execute multiple times', function()
   stream:append(res)
   stream:execute()
   assert_equal(2, called)
-end)
-
-end
-
-local _ENV = TEST_CASE'internal self test' if ENABLE then
-
-local it = IT(_ENV or _M)
-
-it('should pass', function()
-  RedisCommander.self_test()
 end)
 
 end

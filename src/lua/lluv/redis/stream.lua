@@ -97,38 +97,37 @@ local function array_context(n)
   }
 end
 
-local function encode(t, res)
-  res = res or {}
+local function append_str(r, s)
+  -- s = tostring(s)
+  r[#r + 1] = BULK .. #s .. EOL
+  r[#r + 1] = s
+  r[#r + 1] = EOL
+  r[1] = r[1] + 1
+end
 
-  if type(t) == "string" then
-    res[#res + 1] = BULK .. #t .. EOL
-    res[#res + 1] = t
-    res[#res + 1] = EOL
-    return res
+local function encode(res, t)
+  if type(t) == "table" then
+    if t[1] then -- array
+      for i = 1, #t do
+        encode(res, t[i])
+      end
+    else -- hash
+      for k, v in pairs(t) do
+        append_str(res, k)
+        append_str(res, v)
+      end
+    end
+  else
+    append_str(res, t)
   end
-
-  if t == nil or t == NULL then
-    res[#res + 1] = "*-1" .. EOL
-    return res
-  end
-
-  if type(t) == "number" then
-    res[#res + 1] = INT .. t .. EOL
-    return res
-  end
-
-  local n = t.n or #t
-  res[#res + 1] = "*" .. tostring(n) .. EOL
-  for i = 1, n do
-    encode(t[i], res)
-  end
-
   return res
 end
 
 local function encode_cmd(t)
-  if type(t) == 'string' then return t .. EOL, t end
-  return table.concat(encode(t)), t[1]
+  local res = {0}
+  encode(res, t)
+  res[1] = "*" .. res[1] .. EOL
+  return table.concat(res)
 end
 
 local function is_callable(f) return (type(f) == 'function') and f end
@@ -367,7 +366,8 @@ function RedisCmdStream:append(data)
 end
 
 function RedisCmdStream:encode_command(cmd)
-  return encode_cmd(cmd)
+  if type(cmd) == 'string' then return cmd .. EOL, cmd end
+  return encode_cmd(cmd), cmd[1]
 end
 
 function RedisCmdStream:command(cmd, cb, decoder)
