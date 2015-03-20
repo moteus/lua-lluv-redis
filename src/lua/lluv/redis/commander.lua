@@ -32,13 +32,21 @@ end
 
 local any = pack_args
 
-local eval = function(...)
-  local args, cb = pack_args(...)
-  if type(args[3]) == 'table' then
-    table.insert(args, 3, tostring(#args[3]))
+local function nkeys(n)
+  return function(...)
+    local args, cb = pack_args(...)
+    if type(args[n]) == 'table' then
+      table.insert(args, n, tostring(#args[3]))
+    end
+    return args, cb
   end
-  return args, cb
 end
+
+local eval = nkeys(3)
+
+local zinter = nkeys(3)
+
+local zunion = nkeys(3)
 
 local sort = function(...)
   local args, cb = pack_args(...)
@@ -111,6 +119,56 @@ end;
 local pass  = function(err, resp)
   return err, resp
 end;
+
+local function info_sect(section, name, val)
+  local t = {}
+  section[name] = t
+  val = ut.split(val, '%s*,%s*')
+  for i = 1, #val do
+    local key, val = ut.split_first(val[i], "=", true)
+    t[key] = val
+  end
+end
+
+local SECTIONS = {
+  ['^db(%d+)$'] = function(section, name, val)
+    info_sect(section, tonumber(name), val)
+  end,
+  ['^slave(.+)$'] = function(section, name, val)
+    local id, ip, port, state = ut.usplit(val, '%s*,%s*')
+    section[tonumber(name) or name] = {
+      id = id, ip = ip, port = port, state = state
+    }
+  end,
+  ['^cmdstat_(.+)$'] = info_sect
+}
+
+local info  = function(err, resp)
+  if err then return err, resp end
+  resp = ut.split(resp, "[\r\n]+")
+  local res = {}
+  local section = res
+  for i = 1, #resp do
+    local str = resp[i]
+    if str:sub(1, 1) == '#' then
+      local name = str:match("^#%s*(.-)%s*$")
+      section = {}
+      res[name:lower()] = section
+    else
+      local key, val = ut.split_first(str, '%s*:%s*')
+      for pat, sect in pairs(SECTIONS) do
+        local name = key:match(pat)
+        if name then
+          sect(section, name, val)
+          key = nil
+          break
+        end
+      end
+      if key then section[key] = val end
+    end
+  end
+  return nil, res
+end
 
 local RedisPipeline
 
@@ -251,7 +309,7 @@ RedisCommander
   :add_command('INCR',                          {request = any,    response = pass  }   )	--	INCR	key
   :add_command('INCRBY',                        {request = any,    response = pass  }   )	--	INCRBY	key	increment
   :add_command('INCRBYFLOAT',                   {request = any,    response = pass  }   )	--	INCRBYFLOAT	key	increment
-  :add_command('INFO',                          {request = any,    response = pass  }   )	--	INFO	[section]
+  :add_command('INFO',                          {request = any,    response = info  }   )	--	INFO	[section]
   :add_command('KEYS',                          {request = any,    response = pass  }   )	--	KEYS	pattern
   :add_command('LASTSAVE',                      {request = any,    response = pass  }   )	--	LASTSAVE
   :add_command('LINDEX',                        {request = any,    response = pass  }   )	--	LINDEX	key	index
@@ -337,7 +395,7 @@ RedisCommander
   :add_command('ZCARD',                         {request = any,    response = pass  }   )	--	ZCARD	key
   :add_command('ZCOUNT',                        {request = any,    response = pass  }   )	--	ZCOUNT	key	min	max
   :add_command('ZINCRBY',                       {request = any,    response = pass  }   )	--	ZINCRBY	key	increment	member
-  :add_command('ZINTERSTORE',                   {request = any,    response = pass  }   )	--*	ZINTERSTORE	destination	numkeys	key [key ...]	[WEIGHTS weight [weight ...]]	[AGGREGATE SUM|MIN|MAX]
+  :add_command('ZINTERSTORE',                   {request = zinter, response = pass  }   )	--*	ZINTERSTORE	destination	numkeys	key [key ...]	[WEIGHTS weight [weight ...]]	[AGGREGATE SUM|MIN|MAX]
   :add_command('ZLEXCOUNT',                     {request = any,    response = pass  }   )	--	ZLEXCOUNT	key	min	max
   :add_command('ZRANGE',                        {request = any,    response = pass  }   )	--	ZRANGE	key	start	stop	[WITHSCORES]
   :add_command('ZRANGEBYLEX',                   {request = any,    response = pass  }   )	--	ZRANGEBYLEX	key	min	max	[LIMIT offset count]
@@ -352,7 +410,7 @@ RedisCommander
   :add_command('ZREVRANGEBYSCORE',              {request = any,    response = pass  }   )	--	ZREVRANGEBYSCORE	key	max	min	[WITHSCORES]	[LIMIT offset count]
   :add_command('ZREVRANK',                      {request = any,    response = pass  }   )	--	ZREVRANK	key	member
   :add_command('ZSCORE',                        {request = any,    response = pass  }   )	--	ZSCORE	key	member
-  :add_command('ZUNIONSTORE',                   {request = any,    response = pass  }   )	--*	ZUNIONSTORE	destination	numkeys	key [key ...]	[WEIGHTS weight [weight ...]]	[AGGREGATE SUM|MIN|MAX]
+  :add_command('ZUNIONSTORE',                   {request = zunion, response = pass  }   )	--*	ZUNIONSTORE	destination	numkeys	key [key ...]	[WEIGHTS weight [weight ...]]	[AGGREGATE SUM|MIN|MAX]
   :add_command('SCAN',                          {request = any,    response = pass  }   )	--	SCAN	cursor	[MATCH pattern]	[COUNT count]
   :add_command('SSCAN',                         {request = any,    response = pass  }   )	--	SSCAN	key	cursor	[MATCH pattern]	[COUNT count]
   :add_command('HSCAN',                         {request = any,    response = pass  }   )	--	HSCAN	key	cursor	[MATCH pattern]	[COUNT count]

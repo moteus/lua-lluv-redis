@@ -142,6 +142,54 @@ local test = {
     C{"*-1"}, -- ignore result
     nil
   };
+  { "INFO",
+    function(cb) command:info(cb) end;
+    C{"INFO"},
+    S[[
+# Replication
+connected_slaves:1
+slave1:id,address,port,state
+
+# CPU
+used_cpu_sys:1078.20
+used_cpu_user:883.16
+used_cpu_sys_children:26.32
+used_cpu_user_children:319.44
+
+# Cluster
+cluster_enabled:0
+
+# Keyspace
+db0:keys=3210,expires=3,avg_ttl=128712033923
+]];
+    {
+      replication={
+      connected_slaves='1',
+        [1] = {
+          id    = 'id',
+          port  = 'port',
+          state = 'state',
+          ip    = 'address'
+        }
+      };
+      cpu={
+        used_cpu_user_children = '319.44',
+        used_cpu_sys           = '1078.20',
+        used_cpu_sys_children  = '26.32',
+        used_cpu_user          = '883.16'
+      },
+      keyspace={
+        [0]={
+          expires = '3',
+          avg_ttl = '128712033923',
+          keys    = '3210'
+        }
+      },
+      cluster={
+        cluster_enabled='0'
+      },
+    }
+  };
 }
 
 for _, t in ipairs(test) do
