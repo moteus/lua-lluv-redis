@@ -142,6 +142,50 @@ local test = {
     C{"*-1"}, -- ignore result
     nil
   };
+  { "SCAN #1",
+    function(cb) command:scan("0", cb) end;
+    A{"SCAN", "0"},
+    C{"*-1"}, -- ignore result
+    nil
+  };
+  { "SCAN #2",
+    function(cb) command:scan("0", {match = "a", count = "10"}, cb) end;
+    A{"SCAN", "0", "MATCH", "a", "COUNT", "10"},
+    C{"*-1"}, -- ignore result
+    nil
+  };
+  { "SCAN #3",
+    function(cb) command:scan("0", function(self, err, ...)
+      if err then cb(self, err, ...)
+      else cb(self, err, {...}) end
+    end) end;
+    A{"SCAN", "0"},
+    table.concat{"*2\r\n", S"17",
+      A{ "key:611", "key:711", "key:118", "key:117", "key:311", "key:112",
+         "key:111", "key:110", "key:113", "key:211", "key:411", "key:115",
+         "key:116", "key:114", "key:119", "key:811", "key:511", "key:11"
+      }
+    }, -- ignore result
+    {"17",
+      { "key:611", "key:711", "key:118", "key:117", "key:311", "key:112",
+        "key:111", "key:110", "key:113", "key:211", "key:411", "key:115",
+        "key:116", "key:114", "key:119", "key:811", "key:511", "key:11",
+        n=18
+      }
+    }
+  };
+  { "ZRANGEBYSCORE #1",
+    function(cb) command:zrangebyscore("myzset", "1", "2", cb) end;
+    A{"ZRANGEBYSCORE", "myzset", "1", "2"},
+    C{"*-1"}, -- ignore result
+    nil
+  };
+  { "ZRANGEBYSCORE #2",
+    function(cb) command:zrangebyscore("myzset", "1", "2", {withscores = true, limit = {"10", "20"}}, cb) end;
+    A{"ZRANGEBYSCORE", "myzset", "1", "2", "WITHSCORES", "LIMIT", "10", "20"},
+    C{"*-1"}, -- ignore result
+    nil
+  };
   { "INFO",
     function(cb) command:info(cb) end;
     C{"INFO"},
