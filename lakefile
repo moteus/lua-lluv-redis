@@ -13,6 +13,7 @@ target('test', install, function()
   run_test(nil, 'test_commander.lua')
   run_test(nil, 'test_redis.lua')
   run_test(nil, 'test_redis_pub_sub.lua')
+  run_test(nil, 'test_connect.lua')
 
   if not test_summary() then
     quit("test fail")

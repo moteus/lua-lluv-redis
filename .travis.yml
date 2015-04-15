@@ -1,5 +1,7 @@
 language: c
 
+sudo: false
+
 env:
   global:
     - LUAROCKS=2.2.0
@@ -17,14 +19,14 @@ services:
   - redis-server
 
 before_install:
-  - bash .travis/setup_lua.sh
+  - source .travis/setenv_lua.sh
   - bash .travis/setup_uv.sh
-  - sudo luarocks install luacov-coveralls
-  - sudo luarocks install lunitx
-  - sudo luarocks install lluv --server=http://rocks.moonscript.org/dev UV_DIR=$TRAVIS_BUILD_DIR/libuv
+  - luarocks install luacov-coveralls
+  - luarocks install lunitx
+  - luarocks install lluv --server=http://rocks.moonscript.org/dev UV_DIR=$TRAVIS_BUILD_DIR/libuv
 
 install:
-  - sudo luarocks make rockspecs/lluv-redis-scm-0.rockspec 
+  - luarocks make rockspecs/lluv-redis-scm-0.rockspec 
 
 script: 
   - cd test
@@ -32,6 +34,7 @@ script:
   - lunit.sh test_commander.lua
   - lunit.sh test_redis.lua
   - lua      test_redis_pub_sub.lua
+  - lua      test_connect.lua
 
 after_success:
   - luacov-coveralls -v

@@ -411,13 +411,13 @@ function RedisCmdStream:reset(err)
   while true do
     local task = self._queue:pop()
     if not task then break end
-    task[CB](self, err)
+    task[CB](self._self, err)
   end
 
   while true do
     local task = self._txn:pop()
     if not task then break end
-    task[CB](self, err)
+    task[CB](self._self, err)
   end
 
   self._buffer:reset()
