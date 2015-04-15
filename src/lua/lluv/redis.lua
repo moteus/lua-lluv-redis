@@ -104,8 +104,8 @@ function Connection:open(cb)
         if not data then break end
         cli:write(data, self._on_write_handler)
       end
-      call_q(self._open_q, self)
       self._ready = true
+      call_q(self._open_q, self)
     end)
 
     if not ok then return nil, err end
