@@ -44,6 +44,8 @@ local function test_1()
 
   local c = 1
 
+  uv.timer():start(1000, function()
+
   cli:open(function(s, err)
     assert(s == cli)
     assert(not err, tostring(err))
@@ -56,6 +58,8 @@ local function test_1()
     assert(2 == c) c = c + 1
     cli:close()
     srv:close()
+  end)
+
   end)
 
   uv.run(debug.traceback)
@@ -82,6 +86,8 @@ local function test_2()
 
   local c = 1
 
+  uv.timer():start(1000, function()
+
   cli:open(function(s, err)
     assert(not err, tostring(err))
     assert(1 == c) c = c + 1
@@ -93,6 +99,8 @@ local function test_2()
         srv:close()
       end)
     end)
+  end)
+
   end)
 
   uv.run(debug.traceback)
@@ -119,6 +127,8 @@ local function test_3()
 
   local c = 1
 
+  uv.timer():start(1000, function()
+
   cli:open(function(s, err)
     assert(not err, tostring(err))
     assert(1 == c) c = c + 1
@@ -131,6 +141,8 @@ local function test_3()
     cli:close(function()
       srv:close()
     end)
+  end)
+
   end)
 
   uv.run(debug.traceback)
@@ -153,9 +165,11 @@ local function test_4()
     cli:write(res)
   end)
 
-  local cli = Redis.Connection.new('127.0.0.1:5555')
-
   local c = 1
+
+  uv.timer():start(1000, function()
+
+  local cli = Redis.Connection.new('127.0.0.1:5555')
 
   cli:open(function(s, err)
     assert(s == cli)
@@ -175,6 +189,8 @@ local function test_4()
     assert(s == cli)
     assert(not err, tostring(err))
     srv:close()
+  end)
+
   end)
 
   uv.run(debug.traceback)
