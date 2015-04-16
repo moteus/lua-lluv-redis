@@ -34,6 +34,9 @@ local C = function(t) return table.concat(t, '\r\n') .. '\r\n' end
 local EOF = uv.error('LIBUV', uv.EOF)
 
 local function test_1()
+  -- Open multiple times
+  -- Open already opened connection
+  ---------------------------------------
   io.write("Test 1 - ")
 
   local srv = TcpServer(TEST_PORT, function(cli, err)
@@ -57,15 +60,20 @@ local function test_1()
     assert(s == cli)
     assert(not err, tostring(err))
     assert(2 == c) c = c + 1
-    cli:close()
-    srv:close()
+    cli:open(function(s, err)
+      assert(s == cli)
+      assert(not err, tostring(err))
+      assert(3 == c) c = c + 1
+      cli:close()
+      srv:close()
+    end)
   end)
 
   end)
 
   uv.run(debug.traceback)
 
-  assert(c == 3)
+  assert(c == 4)
 
   io.write("OK\n")
 end
