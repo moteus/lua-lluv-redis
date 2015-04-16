@@ -273,8 +273,57 @@ local function test_5()
   io.write("OK\n")
 end
 
+local function test_6()
+  -- Multiple open. First open cb close cnn.
+  -- Otheropen callbacks end with error.
+  -- Try open during closing (open fail)
+  ------------------------------------------
+  io.write("Test 6 - ")
+
+  local srv = TcpServer(TEST_PORT, function(cli, err)
+    assert(not err, tostring(err))
+    cli:start_read(function(_, err, data)
+      if err then return cli:close() end
+    end)
+  end)
+
+  local c = 1
+
+  uv.timer():start(1000, function()
+
+  local cli = Redis.Connection.new(TEST_ADDRESS)
+
+  cli:open(function(s, err)
+    assert(s == cli)
+    assert(1 == c, c) c = c + 1
+    cli:close(function(s, err)
+      srv:close()
+      assert(4 == c, c) c = c + 1
+      assert(not err, tostring(err))
+    end)
+    cli:open(function(s, err)
+      assert(3 == c, c) c = c + 1
+      assert(err == EOF, tostring(err))
+    end)
+  end)
+
+  cli:open(function(s, err)
+    assert(2 == c, c) c = c + 1
+    assert(err == EOF, tostring(err))
+  end)
+
+  end)
+
+  uv.run(debug.traceback)
+
+  assert(c == 5)
+
+  io.write("OK\n")
+end
+
 test_1()
 test_2()
 test_3()
 test_4()
 test_5()
+test_6()

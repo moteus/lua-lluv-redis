@@ -27,6 +27,14 @@ local function split_host(server, def_host, def_port)
   return host, port
 end
 
+local function call_q(q, ...)
+  while true do
+    local cb = q:pop()
+    if not cb then break end
+    cb(...)
+  end
+end
+
 -------------------------------------------------------------------
 local Connection = ut.class() do
 
@@ -72,18 +80,6 @@ function Connection:__init(server)
   return self
 end
 
-function Connection:connected()
-  return not not self._cnn
-end
-
-local function call_q(q, ...)
-  while true do
-    local cb = q:pop()
-    if not cb then break end
-    cb(...)
-  end
-end
-
 function Connection:open(cb)
   if self._ready then
     uv.defer(cb, self)
@@ -105,7 +101,11 @@ function Connection:open(cb)
         cli:write(data, self._on_write_handler)
       end
       self._ready = true
-      call_q(self._open_q, self)
+      while self._ready do
+        local cb = self._open_q:pop()
+        if not cb then break end
+        cb(self)
+      end
     end)
 
     if not ok then return nil, err end
@@ -133,14 +133,14 @@ function Connection:close(err, cb)
     local err = err
     self._cnn:close(function()
       self._cnn = nil
+
+      call_q(self._open_q, self, err or EOF)
+      self._stream:reset(err or EOF)
       call_q(self._close_q, self, err)
+      self._delay_q:reset()
     end)
   end
 
-  err = err or EOF
-  call_q(self._open_q, self, err)
-  self._stream:reset(err or EOF)
-  self._delay_q:reset()
   self._ready = false
 end
 
