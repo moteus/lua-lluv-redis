@@ -83,11 +83,11 @@ end
 
 local function decode_line(line)
   local p, d = line:sub(1, 1), line:sub(2)
-  if p == '+' then return p, d end
-  if p == '-' then return p, ut.split_first(d, " ", true) end
-  if p == ':' then return p, tonumber(d) end
-  if p == '$' then return p, tonumber(d) end
-  if p == '*' then return p, tonumber(d) end
+  if p == OK   then return p, d end
+  if p == ERR  then return p, ut.split_first(d, " ", true) end
+  if p == INT  then return p, tonumber(d) end
+  if p == BULK then return p, tonumber(d) end
+  if p == ARR  then return p, tonumber(d) end
   return p, d
 end
 
@@ -188,6 +188,7 @@ function RedisCmdStream:_decode_array(task, t)
       elseif typ == BULK then
         t[i], ctx[STATE] = n, 'array_string'
       else
+        --! @todo raise EPROTO error
         error("Unsupported Type:" .. typ)
       end
     end
@@ -227,8 +228,7 @@ function RedisCmdStream:_next_data_task()
 
     if not task then
       if not self._buffer:empty() then
-        local err = RedisError_EPROTO(self._buffer:read_all())
-        self:halt(err)
+        return nil, RedisError_EPROTO(self._buffer:read_all())
       end
       return
     end
@@ -280,14 +280,19 @@ function RedisCmdStream:_next_data_task()
         task[STATE], task[DATA] = 'ARR', array_context(data)
         return task
       end
+    else
+      return nil, RedisError_EPROTO(line)
     end
   end
 end
 
 function RedisCmdStream:execute()
   while true do
-    local task = self:_next_data_task()
-    if not task then return end
+    local task, err = self:_next_data_task()
+    if not task then 
+      if err then self:halt(err) end
+      return
+    end
 
     local cb, decoder = task[CB], task[DECODER]
     if task[STATE] == 'BULK' then
