@@ -487,7 +487,7 @@ it("halt should clear stream", function()
   assert(stream._buffer:empty())
 end)
 
-it("should decode nil", function()
+it("should decode array nil", function()
   stream:on_command(PASS)
 
   local res
@@ -497,6 +497,20 @@ it("should decode nil", function()
   end)
 
   stream:append("*-1\r\n"):execute()
+
+  assert_nil(res)
+end)
+
+it("should decode bulk nil", function()
+  stream:on_command(PASS)
+
+  local res
+  stream:command("PING", function(self, err, data)
+    assert_nil(err)
+    res = data
+  end)
+
+  stream:append("$-1\r\n"):execute()
 
   assert_nil(res)
 end)
@@ -511,10 +525,12 @@ it("should decode arrays with holes", function()
   end)
 
   local str = table.concat{
-    "*3\r\n",
+    "*5\r\n",
       ":1\r\n",
       "*-1\r\n",
       ":3\r\n",
+      "$-1\r\n",
+      ":5\r\n",
   }
 
   stream:append(str):execute()
@@ -523,6 +539,8 @@ it("should decode arrays with holes", function()
   assert_equal(1,res[1])
   assert_nil(res[2])
   assert_equal(3,res[3])
+  assert_nil(res[4])
+  assert_equal(5,res[5])
 end)
 
 it("should use custom result decoder", function()

@@ -186,7 +186,11 @@ function RedisCmdStream:_decode_array(task, t)
         local err = RedisError_SERVER(n, ext, task[CMD])
         t[i], ctx[I] = err, i + 1
       elseif typ == BULK then
-        t[i], ctx[STATE] = n, 'array_string'
+        if n == -1 then
+          t[i], ctx[I] = nil, i + 1
+        else
+          t[i], ctx[STATE] = n, 'array_string'
+        end
       else
         --! @todo raise EPROTO error
         error("Unsupported Type:" .. typ)
@@ -262,7 +266,11 @@ function RedisCmdStream:_next_data_task()
       queue:pop()
       cb(self._self, decoder(nil, data))
     elseif typ == BULK then
-      task[STATE], task[DATA] = 'BULK', data
+      if data == -1 then
+        cb(self._self, decoder(nil, nil))
+      else
+        task[STATE], task[DATA] = 'BULK', data
+      end
     elseif typ == ARR then
       if data == -1 then
         queue:pop()
