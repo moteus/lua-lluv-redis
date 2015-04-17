@@ -38,8 +38,19 @@ end
 -------------------------------------------------------------------
 local Connection = ut.class() do
 
-function Connection:__init(server)
-  self._host, self._port = split_host(server, "127.0.0.1", "6379")
+function Connection:__init(opt)
+  if type(opt) == 'string' then
+    opt = {server = opt}
+  else opt = opt or {} end
+
+  if opt.server then
+    self._host, self._port = split_host(opt.server, '127.0.0.1', '6379')
+  else
+    self._host = opt.host or '127.0.0.1'
+    self._port = opt.port or '6379'
+  end
+  self._db               = opt.db
+  self._pass             = opt.pass
   self._stream           = RedisStream.new(self)
   self._commander        = RedisCommander.new(self._stream)
   self._open_q           = ut.Queue.new()
@@ -80,39 +91,82 @@ function Connection:__init(server)
   return self
 end
 
+local function on_ready(self, ...)
+  self._ready = true
+
+  while true do
+    local data = self._delay_q:pop()
+    if not data then break end
+    self._cnn:write(data, self._on_write_handler)
+  end
+
+  while self._ready do
+    local cb = self._open_q:pop()
+    if not cb then break end
+    cb(self, ...)
+  end
+end
+
 function Connection:open(cb)
   if self._ready then
     uv.defer(cb, self)
     return self
   end
 
-  if not self._cnn then
-    local ok, err = uv.tcp():connect(self._host, self._port, function(cli, err)
-      if err then return self:close(err) end
+  if cb then self._open_q:push(cb) end
 
-      cli:start_read(function(cli, err, data)
-        if err then return self._stream:halt(err) end
-        self._stream:append(data):execute()
-      end)
+  -- Only first call 
+  if self._cnn then return self end
 
-      while true do
-        local data = self._delay_q:pop()
-        if not data then break end
-        cli:write(data, self._on_write_handler)
-      end
-      self._ready = true
-      while self._ready do
-        local cb = self._open_q:pop()
-        if not cb then break end
-        cb(self)
-      end
+  local cmd -- Init command
+
+  local ok, err = uv.tcp():connect(self._host, self._port, function(cli, err)
+    if err then return self:close(err) end
+
+    cli:start_read(function(cli, err, data)
+      if err then return self._stream:halt(err) end
+      self._stream:append(data):execute()
     end)
 
-    if not ok then return nil, err end
-    self._cnn = ok
-  end
+    if not cmd then return on_ready(self) end
 
-  if cb then self._open_q:push(cb) end
+    -- send out init command
+    for _, data in ipairs(cmd) do
+      cli:write(data, self._on_write_handler)
+    end
+  end)
+
+  if not ok then return nil, err end
+  self._cnn = ok
+
+  if self._db or self._pass then
+    local called = false
+
+    -- call until first error
+    local wrap = function(last)
+      return function(_, err, ...)
+        if called then return end
+
+        if err then
+          called = true
+          return self:close(err)
+        end
+
+        if last then on_ready(self, err, ...) end
+      end
+    end
+
+    local last = not not self._db
+    if self._pass then self:auth  (tostring(self._pass), wrap(last)) end
+    if self._db   then self:select(tostring(self._db  ), wrap(true)) end
+
+    cmd = {}
+    while true do
+      local data = self._delay_q:pop()
+      if not data then break end
+      cmd[#cmd + 1] = data
+    end
+  end
 
   return self
 end
