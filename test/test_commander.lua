@@ -234,6 +234,12 @@ db0:keys=3210,expires=3,avg_ttl=128712033923
       },
     }
   };
+  { "SCRIPT EXISTS",
+    function(cb) command:script_exists("sha#1", "sha#2", "sha#3", cb) end;
+    A{"SCRIPT", "EXISTS", "sha#1", "sha#2", "sha#3"},
+    C{"*3", ":1", ":0", ":1"},
+    {true, false, true, n=3},
+  };
 }
 
 for _, t in ipairs(test) do

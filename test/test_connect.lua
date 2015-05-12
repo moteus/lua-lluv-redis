@@ -276,7 +276,7 @@ end
 
 local function test_6()
   -- Multiple open. First open cb close cnn.
-  -- Otheropen callbacks end with error.
+  -- Other open callbacks end with error.
   -- Try open during closing (open fail)
   ------------------------------------------
   io.write("Test 6 - ")

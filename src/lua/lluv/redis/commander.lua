@@ -170,10 +170,12 @@ local nbool = function(err, resp)
 end
 
 local hash  = function(err, resp)
+  if err then return nil, err end
+
   local res = {}
   for i = 1, resp.n or #resp, 2 do
-      res[ resp[i] ] = resp[i + 1]
-    end
+    res[ resp[i] ] = resp[i + 1]
+  end
   return err, res
 end
 
@@ -231,6 +233,16 @@ local info  = function(err, resp)
   return nil, res
 end
 
+local exists = function(err, resp)
+  if err then return nil, err end
+
+  for i = 1, resp.n or #resp do
+    resp[ i ] = (resp[i] ~= 0)
+  end
+
+  return err, resp
+end
+
 local RedisPipeline
 
 local RedisCommander = ut.class() do
@@ -255,24 +267,25 @@ function RedisCommander:add_command(name, opt, request, response)
 
   request  = opt.request  or any
   response = opt.response or pass
-  name     = ut.split_first(name, ' ', true)
+  fn_name  = name:gsub('[%s%-]', '_')
+  name     = name:find(' ', nil, true) and ut.split(name, ' ') or name
 
   local decoder = function(err, data)
     if err then return err, data end --! @todo Build error object
     return response(err, data)
   end
 
-  self[name:lower()] = function(self, ...)
+  self[fn_name:lower()] = function(self, ...)
     local cmd, cb = request(name, ...)
     return self._stream:command(cmd, cb, decoder)
   end
 
-  self["_pipeline_" .. name:lower()] = function(self, ...)
+  self["_pipeline_" .. fn_name:lower()] = function(self, ...)
     local cmd, cb = request(name, ...)
     return self._stream:pipeline_command(cmd, cb, decoder)
   end
 
-  self._commands[name] = true
+  self._commands[fn_name] = true
 
   return self
 end
@@ -417,7 +430,7 @@ RedisCommander
   :add_command('SADD',                          {request = any,      response = pass      }   )	--	SADD	key	member [member ...]
   :add_command('SAVE',                          {request = any,      response = pass      }   )	--	SAVE
   :add_command('SCARD',                         {request = any,      response = pass      }   )	--	SCARD	key
-  :add_command('SCRIPT EXISTS',                 {request = any,      response = pass      }   )	--	SCRIPT EXISTS	script [script ...]
+  :add_command('SCRIPT EXISTS',                 {request = any,      response = exists    }   )	--	SCRIPT EXISTS	script [script ...]
   :add_command('SCRIPT FLUSH',                  {request = any,      response = pass      }   )	--	SCRIPT FLUSH
   :add_command('SCRIPT KILL',                   {request = any,      response = pass      }   )	--	SCRIPT KILL
   :add_command('SCRIPT LOAD',                   {request = any,      response = pass      }   )	--	SCRIPT LOAD	script
