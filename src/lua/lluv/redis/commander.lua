@@ -165,6 +165,12 @@ local sbool = function(err, resp)
   return err, resp == 'OK'
 end
 
+local sbool_or_v = function(err, resp)
+  if err or not resp then return err, resp end
+  if resp == 'OK' then return nil, true end
+  return nil, resp
+end
+
 local nbool = function(err, resp)
   return err, resp == 1
 end
@@ -306,6 +312,23 @@ function RedisCommander:pipeline()
   return RedisPipeline.new(self)
 end
 
+--! @todo 
+--
+-- BITFIELD	key	[GET type offset]	[SET type offset value]	[INCRBY type offset increment]	[OVERFLOW WRAP|SAT|FAIL]
+-- 
+-- CLIENT REPLY	ON|OFF|SKIP
+-- 
+-- CLUSTER FAILOVER	[FORCE|TAKEOVER]
+-- CLUSTER RESET	[HARD|SOFT]
+-- 
+-- GEOADD	key	longitude latitude member [longitude latitude member ...]
+-- GEOHASH	key	member [member ...]
+-- GEOPOS	key	member [member ...]
+-- GEODIST	key	member1	member2	[unit]
+-- GEORADIUS	key	longitude	latitude	radius	m|km|ft|mi	[WITHCOORD]	[WITHDIST]	[WITHHASH]	[COUNT count]	[ASC|DESC]	[STORE key]	[STOREDIST key]
+-- GEORADIUSBYMEMBER	key	member	radius	m|km|ft|mi	[WITHCOORD]	[WITHDIST]	[WITHHASH]	[COUNT count]	[ASC|DESC]	[STORE key]	[STOREDIST key]
+-- 
+
 RedisCommander
   :add_command('APPEND',                        {request = any,      response = pass      }   )	--	APPEND	key	value
   :add_command('AUTH',                          {request = any,      response = pass      }   )	--	AUTH	password
@@ -419,6 +442,8 @@ RedisCommander
   :add_command('PUNSUBSCRIBE',                  {request = any,      response = pass      }   )	--	PUNSUBSCRIBE	[pattern [pattern ...]]
   :add_command('QUIT',                          {request = any,      response = pass      }   )	--	QUIT
   :add_command('RANDOMKEY',                     {request = any,      response = pass      }   )	--	RANDOMKEY
+  :add_command('READONLY',                      {request = any,      response = pass      }   )	--	READONLY
+  :add_command('READWRITE',                     {request = any,      response = pass      }   )	--	READWRITE
   :add_command('RENAME',                        {request = any,      response = pass      }   )	--	RENAME	key	newkey
   :add_command('RENAMENX',                      {request = any,      response = nbool     }   )	--	RENAMENX	key	newkey
   :add_command('RESTORE',                       {request = any,      response = pass      }   )	--	RESTORE	key	ttl	serialized-value	[REPLACE]
@@ -430,6 +455,7 @@ RedisCommander
   :add_command('SADD',                          {request = any,      response = pass      }   )	--	SADD	key	member [member ...]
   :add_command('SAVE',                          {request = any,      response = pass      }   )	--	SAVE
   :add_command('SCARD',                         {request = any,      response = pass      }   )	--	SCARD	key
+  :add_command('SCRIPT DEBUG',                  {request = any,      response = pass      }   )	--	SCRIPT DEBUG	YES|SYNC|NO
   :add_command('SCRIPT EXISTS',                 {request = any,      response = exists    }   )	--	SCRIPT EXISTS	script [script ...]
   :add_command('SCRIPT FLUSH',                  {request = any,      response = pass      }   )	--	SCRIPT FLUSH
   :add_command('SCRIPT KILL',                   {request = any,      response = pass      }   )	--	SCRIPT KILL
@@ -458,12 +484,16 @@ RedisCommander
   :add_command('SUBSCRIBE',                     {request = any,      response = pass      }   )	--	SUBSCRIBE	channel [channel ...]
   :add_command('SUNION',                        {request = any,      response = pass      }   )	--	SUNION	key [key ...]
   :add_command('SUNIONSTORE',                   {request = any,      response = pass      }   )	--	SUNIONSTORE	destination	key [key ...]
+  :add_command('SWAPDB',                        {request = any,      response = sbool     }   )	--	SWAPDB	index	index
   :add_command('SYNC',                          {request = any,      response = pass      }   )	--	SYNC
   :add_command('TIME',                          {request = any,      response = pass      }   )	--	TIME
+  :add_command('TOUCH',                         {request = any,      response = sbool_or_v}   )	--	TOUCH	key [key ...]
   :add_command('TTL',                           {request = any,      response = pass      }   )	--	TTL	key
   :add_command('TYPE',                          {request = any,      response = pass      }   )	--	TYPE	key
   :add_command('UNSUBSCRIBE',                   {request = any,      response = pass      }   )	--	UNSUBSCRIBE	[channel [channel ...]]
+  :add_command('UNLINK',                        {request = any,      response = sbool_or_v}   )	--	UNLINK	key [key ...]
   :add_command('UNWATCH',                       {request = any,      response = pass      }   )	--	UNWATCH
+  :add_command('WAIT',                          {request = any,      response = pass      }   )	--	WAIT	numslaves	timeout
   :add_command('WATCH',                         {request = any,      response = pass      }   )	--	WATCH	key [key ...]
   :add_command('ZADD',                          {request = any,      response = pass      }   )	--	ZADD	key	score member [score member ...]
   :add_command('ZCARD',                         {request = any,      response = pass      }   )	--	ZCARD	key

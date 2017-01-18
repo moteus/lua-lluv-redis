@@ -44,6 +44,12 @@ function RedisError:__tostring()
   return err
 end
 
+function RedisError:__eq(lhs)
+  return getmetatable(lhs) == RedisError
+    and self:no()   == lhs:no()
+    and self:name() == lhs:name()
+end
+
 end
 
 local meta = getmetatable

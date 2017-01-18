@@ -14,6 +14,7 @@ local nreturn, is_equal = utils.nreturn, utils.is_equal
 
 local C = function(t) return table.concat(t, '\r\n') .. '\r\n' end
 local S = function(s) return C{"$" .. #s, s} end
+local I = function(i) return C{":" .. tostring(i)} end
 local A = function(a)
   local t = {"*" .. #a}
   for i, s in ipairs(a) do
@@ -22,6 +23,7 @@ local A = function(a)
   end
   return C(t)
 end
+local E = function(m) return C {"-" .. m} end
 
 local ENABLE = true
 
@@ -240,10 +242,73 @@ db0:keys=3210,expires=3,avg_ttl=128712033923
     C{"*3", ":1", ":0", ":1"},
     {true, false, true, n=3},
   };
+  { "WAIT nowait",
+    function(cb) command:wait('1', '0', cb) end;
+    A{"WAIT", "1", "0"},
+    I(1),
+    1
+  };
+  { "WAIT timeout",
+    function(cb) command:wait('5', '3000', cb) end;
+    A{"WAIT", "5", "3000"},
+    I(2),
+    2
+  };
+  { "TOUCH ERROR",
+    function(cb) command:touch('key1', cb) end;
+    A{"TOUCH", "key1"},
+    E("ERR Unknown or disabled command 'TOUCH'"),
+    nil,
+    RedisStream.error(0, 'ERR', "Unknown or disabled command 'TOUCH'"),
+  };
+  { "TOUCH boolean",
+    function(cb) command:touch('key1', cb) end;
+    A{"TOUCH", "key1"},
+    C{"+OK"},
+    true
+  };
+  { "TOUCH integer",
+    function(cb) command:touch('key1', 'key2', cb) end;
+    A{"TOUCH", "key1", "key2", },
+    I(1),
+    1
+  };
+  { "UNLINK ERROR",
+    function(cb) command:unlink('key1', cb) end;
+    A{"UNLINK", "key1"},
+    E("ERR Unknown or disabled command 'TOUCH'"),
+    nil,
+    RedisStream.error(0, 'ERR', "Unknown or disabled command 'UNLINK'"),
+  };
+  { "UNLINK boolean",
+    function(cb) command:unlink('key1', cb) end;
+    A{"UNLINK", "key1"},
+    C{"+OK"},
+    true
+  };
+  { "UNLINK integer",
+    function(cb) command:unlink('key1', 'key2', cb) end;
+    A{"UNLINK", "key1", "key2", },
+    I(1),
+    1
+  };
+  { "SWAPDB ERROR",
+    function(cb) command:swapdb('1', '0', cb) end;
+    A{"SWAPDB", "1", "0"},
+    E("ERR Unknown or disabled command 'SWAPDB'"),
+    nil,
+    RedisStream.error(0, 'ERR', "Unknown or disabled command 'SWAPDB'"),
+  };
+  { "SWAPDB",
+    function(cb) command:swapdb('1', '0', cb) end;
+    A{"SWAPDB", "1", "0"},
+    C{"+OK"},
+    true
+  };
 }
 
 for _, t in ipairs(test) do
-  local NAME, FN, REQUEST, RESPONSE, RESULT = t[1], t[2], t[3], t[4], t[5]
+  local NAME, FN, REQUEST, RESPONSE, RESULT, ERR = t[1], t[2], t[3], t[4], t[5], t[6]
 
   it( NAME .. " command", function()
     local msg, called
@@ -262,6 +327,7 @@ for _, t in ipairs(test) do
       else
         assert_equal(RESULT, data)
       end
+      assert_equal(ERR, err)
     end)
 
     assert_equal(REQUEST, msg)
