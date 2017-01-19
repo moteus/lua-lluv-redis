@@ -273,6 +273,7 @@ function RedisCmdStream:_next_data_task()
       cb(self._self, decoder(nil, data))
     elseif typ == BULK then
       if data == -1 then
+        queue:pop()
         cb(self._self, decoder(nil, nil))
       else
         task[STATE], task[DATA] = 'BULK', data

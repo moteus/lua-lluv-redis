@@ -1076,4 +1076,201 @@ end)
 
 end
 
+local ENABLE = true
+
+local _ENV = TEST_CASE'redis stream callback' if ENABLE then
+
+local it = IT(_ENV or _M)
+
+local stream
+
+function setup()
+  stream = assert(RedisStream.new())
+end
+
+it("should remove task after bulk nil", function()
+  stream:on_command(PASS)
+
+  local called1, called2, res
+  stream:command("PING", function(self, err, data)
+    assert_nil(err)
+    called1 = true
+  end)
+
+  stream:command("PING", function(self, err, data)
+    assert_nil(err)
+    called2 = true
+  end)
+
+  stream:append("$-1\r\n"):execute()
+
+  assert_true(called1)
+  assert_nil (called2)
+
+  called1, called2 = nil
+
+  stream:append("$-1\r\n"):execute()
+
+  assert_nil (called1)
+  assert_true(called2)
+end)
+
+it("should remove task after array nil", function()
+  stream:on_command(PASS)
+
+  local called1, called2, res
+  stream:command("PING", function(self, err, data)
+    assert_nil(err)
+    called1 = true
+  end)
+
+  stream:command("PING", function(self, err, data)
+    assert_nil(err)
+    called2 = true
+  end)
+
+  stream:append("*-1\r\n"):execute()
+
+  assert_true(called1)
+  assert_nil (called2)
+
+  called1, called2 = nil
+
+  stream:append("*-1\r\n"):execute()
+
+  assert_nil (called1)
+  assert_true(called2)
+end)
+
+it("should remove task after array", function()
+  stream:on_command(PASS)
+
+  local a = C{ "*2",
+    "$5", "HELLO",
+    ":123456"
+  }
+
+  local called1, called2, res
+  stream:command("PING", function(self, err, data)
+    assert_nil(err)
+    called1 = true
+    res     = data
+  end)
+
+  stream:command("PING", function(self, err, data)
+    assert_nil(err)
+    called2 = true
+    res     = data
+  end)
+
+  stream:append(a):execute()
+
+  assert_true(called1)
+  assert_nil (called2)
+  assert_table(res)
+  assert_equal('HELLO', res[1])
+  assert_equal(123456,  res[2])
+
+  called1, called2 = nil
+
+  stream:append(a):execute()
+
+  assert_nil (called1)
+  assert_true(called2)
+  assert_table(res)
+  assert_equal('HELLO', res[1])
+  assert_equal(123456,  res[2])
+end)
+
+it("should remove task after bulk", function()
+  stream:on_command(PASS)
+
+  local called1, called2, res
+  stream:command("PING", function(self, err, data)
+    assert_nil(err)
+    res     = data
+    called1 = true
+  end)
+
+  stream:command("PING", function(self, err, data)
+    assert_nil(err)
+    res     = data
+    called2 = true
+  end)
+
+  stream:append(C{"$5", "HELLO"}):execute()
+
+  assert_true  (called1)
+  assert_nil   (called2)
+  assert_equal ('HELLO', res)
+
+  called1, called2 = nil
+
+  stream:append(C{"$5", "WORLD"}):execute()
+
+  assert_nil   (called1)
+  assert_true  (called2)
+  assert_equal ('WORLD', res)
+end)
+
+it("should remove task after error", function()
+  stream:on_command(PASS)
+
+  local called1, called2, res
+  stream:command("PING", function(self, err, data)
+    res     = err
+    called1 = true
+  end)
+
+  stream:command("PING", function(self, err, data)
+    res     = err
+    called2 = true
+  end)
+
+  stream:append("-GENERAL hello\r\n"):execute()
+
+  assert_true  (called1)
+  assert_nil   (called2)
+  assert(res)
+  assert_equal ('GENERAL', res:name())
+
+  called1, called2 = nil
+
+  stream:append("-ERROR hello\r\n"):execute()
+
+  assert_nil   (called1)
+  assert_true  (called2)
+  assert       (res)
+  assert_equal ('ERROR', res:name())
+end)
+
+it("should remove task after pass", function()
+  stream:on_command(PASS)
+
+  local called1, called2, res
+  stream:command("PING", function(self, err, data)
+    assert_nil(err)
+    called1 = true
+  end)
+
+  stream:command("PING", function(self, err, data)
+    assert_nil(err)
+    called2 = true
+  end)
+
+  stream:append("+OK\r\n"):execute()
+
+  assert_true(called1)
+  assert_nil (called2)
+
+  called1, called2 = nil
+
+  stream:append("+OK\r\n"):execute()
+
+  assert_nil (called1)
+  assert_true(called2)
+end)
+end
+
+
 RUN()
