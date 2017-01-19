@@ -90,6 +90,39 @@ local test = {
     A{"key1", "key2", "first", "second"},
     {"key1", "key2", "first", "second", n=4}
   };
+  { "EVAL #3.1",
+    function(cb) command:eval("return {KEYS[1],KEYS[2],ARGV[1],ARGV[2]}", "0", {"first", "second"}, cb) end;
+    A{
+      "EVAL",
+      "return {KEYS[1],KEYS[2],ARGV[1],ARGV[2]}",
+      "0", "first", "second"
+    },
+    -- This is invalid response, but we test only request in this test case
+    A{"key1", "key2", "first", "second"},
+    {"key1", "key2", "first", "second", n=4}
+  };
+  { "EVAL #3.2",
+    function(cb) command:eval("return {KEYS[1],KEYS[2],ARGV[1],ARGV[2]}", {}, {"first", "second"}, cb) end;
+    A{
+      "EVAL",
+      "return {KEYS[1],KEYS[2],ARGV[1],ARGV[2]}",
+      "0", "first", "second"
+    },
+    -- This is invalid response, but we test only request in this test case
+    A{"key1", "key2", "first", "second"},
+    {"key1", "key2", "first", "second", n=4}
+  };
+  { "EVAL #3.3",
+    function(cb) command:eval("return {KEYS[1],KEYS[2],ARGV[1],ARGV[2]}", {"first", "second"}, cb) end;
+    A{
+      "EVAL",
+      "return {KEYS[1],KEYS[2],ARGV[1],ARGV[2]}",
+      "2", "first", "second"
+    },
+    -- This is invalid response, but we test only request in this test case
+    A{"key1", "key2", "first", "second"},
+    {"key1", "key2", "first", "second", n=4}
+  };
   { "EVAL #4",
     function(cb) command:eval("return {KEYS[1],KEYS[2],ARGV[1],ARGV[2]}", {"key1", "key2"}, {"first", "second"}, cb) end;
     A{
