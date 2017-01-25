@@ -91,6 +91,15 @@ function Connection:__init(opt)
   return self
 end
 
+function Connection:clone()
+  return Connection.new{
+    host = self._host;
+    port = self._port;
+    pass = self._pass;
+    db   = self._db;
+  }
+end
+
 local function on_ready(self, ...)
   self._ready = true
 
