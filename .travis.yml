@@ -35,6 +35,8 @@ script:
   - lunit.sh test_redis.lua
   - lua      test_redis_pub_sub.lua
   - lua      test_connect.lua
+  - redis-cli --version
+  - redis-cli eval "redis.call('set', 'a', math.huge) local a=redis.call('get', 'a') return {a, math.huge}" 0
 
 after_success:
   - luacov-coveralls -v
