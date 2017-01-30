@@ -19,12 +19,29 @@ local function ocall(fn, ...) if fn then return fn(...) end end
 
 local EOF   = uv.error("LIBUV", uv.EOF)
 
-local function split_host(server, def_host, def_port)
-  if not server then return def_host, def_port end
-  local host, port = string.match(server, "^(.-):(%d*)$")
-  if not host then return server, def_port end
-  if #port == 0 then port = def_port end
-  return host, port
+local function nil_if_empty(t)
+  if t and #t == 0 then return nil end
+  return t
+end
+
+-- Redis url shold be `[<redis>://][<password>@]host[:<port>][/<db>]`
+function decode_url(url)
+  local scheme, pass, host, port, db
+
+  scheme, url = ut.split_first(url, '://', true)
+  if not url then url = scheme
+  elseif scheme ~= 'redis' then
+    error('unsupported scheme: ' .. scheme)
+  end
+
+  pass, url = ut.split_first(url, '@', true)
+  if not url then url, pass = pass end
+
+  host, url = ut.split_first(url, ':', true)
+  if not url then host, db = ut.split_first(host, '/', true)
+  else port, db = ut.split_first(url, '/', true) end
+
+  return nil_if_empty(host), nil_if_empty(port), nil_if_empty(pass), nil_if_empty(db)
 end
 
 local function call_q(q, ...)
@@ -44,11 +61,14 @@ function Connection:__init(opt)
   else opt = opt or {} end
 
   if opt.server then
-    self._host, self._port = split_host(opt.server, '127.0.0.1', '6379')
+    self._host, self._port, self._pass, self._db = decode_url(opt.server)
+    self._host = self._host or '127.0.0.1'
+    self._port = self._port or '6379'
   else
     self._host = opt.host or '127.0.0.1'
     self._port = opt.port or '6379'
   end
+
   self._db               = opt.db
   self._pass             = opt.pass
   self._stream           = RedisStream.new(self)
