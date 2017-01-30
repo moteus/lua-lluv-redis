@@ -64,6 +64,8 @@ function Connection:__init(opt)
     self._host, self._port, self._pass, self._db = decode_url(opt.server)
     self._host = self._host or '127.0.0.1'
     self._port = self._port or '6379'
+    self._pass = self._pass or opt.pass
+    self._db   = self._db   or opt.db
   else
     self._host = opt.host or '127.0.0.1'
     self._port = opt.port or '6379'
