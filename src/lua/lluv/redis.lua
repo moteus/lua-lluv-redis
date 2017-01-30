@@ -67,10 +67,10 @@ function Connection:__init(opt)
   else
     self._host = opt.host or '127.0.0.1'
     self._port = opt.port or '6379'
+    self._db   = opt.db
+    self._pass = opt.pass
   end
 
-  self._db               = opt.db
-  self._pass             = opt.pass
   self._stream           = RedisStream.new(self)
   self._commander        = RedisCommander.new(self._stream)
   self._open_q           = ut.Queue.new()
@@ -261,6 +261,10 @@ end)
 
 end
 -------------------------------------------------------------------
+
+local cnn = Connection.new({
+  server = 'redis://127.0.0.1/11'
+})
 
 return {
   Connection = Connection;
