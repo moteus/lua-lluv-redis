@@ -264,10 +264,6 @@ end)
 end
 -------------------------------------------------------------------
 
-local cnn = Connection.new({
-  server = 'redis://127.0.0.1/11'
-})
-
 return {
   Connection = Connection;
 }
