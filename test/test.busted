@@ -1,0 +1,118 @@
+io.stdout:setvbuf'no';io.stderr:setvbuf'no';
+package.path = "..\\src\\lua\\?.lua;" .. package.path
+
+local prequire = function(m)
+  local ok, m = pcall(require, m)
+  if ok then return m end
+end
+
+local uv    = require "lluv"
+local loop  = require "lluv.busted.loop"
+local Redis = require "lluv.redis"
+local stp   = prequire"StackTracePlus"
+
+local URL = "redis://127.0.0.1/12"
+
+setloop(loop)
+
+loop.set_timeout(5)
+
+loop.set_traceback(stp and stp.stacktrace or debug.traceback)
+
+describe('lluv.Redis test', function()
+  local redis
+
+  describe('Basic commands test', function()
+    it('basic ping', function(done) async()
+      redis:ping(function(self, err, res)
+        assert.equal(redis, self) assert.is_nil(err)
+        assert.equal('PONG', res)
+        done()
+      end)
+    end)
+  end)
+
+  describe('events test', function()
+    local client
+
+    it('should hit all events', function(done) async()
+      local events = {}
+
+      client = redis:clone()
+
+      client._ee:onAny(function(self, event, ...)
+        events[#events + 1] = event
+      end)
+
+      client:open(function(_, err) assert_nil(err) end)
+
+      uv.timer():start(100, function()
+        assert.same({'open', 'ready'}, events)
+
+        client:subscribe('hello', function(_, err) assert_nil(err)
+          redis:publish('hello', 'world', function(_, err) assert_nil(err) end)
+        end)
+
+        uv.timer():start(100, function()
+          assert.same({'open', 'ready', 'subscribe', 'message'}, events)
+          client:close(function()  end)
+
+          uv.timer():start(100, function()
+            assert.same({'open', 'ready', 'subscribe', 'message', 'close'}, events)
+            done()
+          end)
+        end)
+      end)
+    end)
+
+    after_each(function(done) async()
+      if client then
+        client:close(function() done() end)
+        client = nil
+      else
+        done(ctx)
+      end
+    end)
+  end)
+
+  before_each(function(done) async()
+    redis = Redis.Connection.new{server = URL}
+    redis:open(function(self, err) assert.is_nil(err)
+      redis:flushdb(function(self, err)  assert.is_nil(err)
+        self:script_flush(function(self, err) assert.is_nil(err)
+          done()
+        end)
+      end)
+    end)
+  end)
+
+  after_each(function(done) async()
+    if redis then
+      redis:close(function()
+        loop.verify_after()
+        done(ctx)
+      end)
+      redis = nil
+    else
+      done(ctx)
+    end
+  end)
+
+end)
+
+local RedisStream = require "lluv.redis.stream"
+
+assert:add_formatter(function(t)
+  if type(t) ~= 'table' then return end
+
+  if getmetatable(t) == Redis.Connection then
+    return tostring(t)
+  end
+
+  if RedisStream.IsError(t) then
+    return tostring(t)
+  end
+
+end)
+
+assert_nil = assert.is_nil

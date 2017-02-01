@@ -14,6 +14,7 @@ local uv             = require "lluv"
 local ut             = require "lluv.utils"
 local RedisStream    = require "lluv.redis.stream"
 local RedisCommander = require "lluv.redis.commander"
+local EventEmitter   = require "EventEmitter"
 
 local function ocall(fn, ...) if fn then return fn(...) end end
 
@@ -79,6 +80,7 @@ function Connection:__init(opt)
   self._close_q          = ut.Queue.new()
   self._delay_q          = ut.Queue.new()
   self._ready            = false
+  self._ee               = EventEmitter.new{self=self}
 
   self._on_message       = nil
   self._on_error         = nil
@@ -103,11 +105,13 @@ function Connection:__init(opt)
   :on_halt(function(s, err)
     self:close(err)
     if err ~= EOF then
+      self._ee:emit('error', err)
       ocall(self._on_error, self, err)
     end
   end)
-  :on_message(function(...)
-    ocall(self._on_message, ...)
+  :on_message(function(_, ...)
+    self._ee:emit(...)
+    ocall(self._on_message, self, ...)
   end)
 
   return self
@@ -124,6 +128,8 @@ end
 
 local function on_ready(self, ...)
   self._ready = true
+
+  self._ee:emit('ready')
 
   while true do
     local data = self._delay_q:pop()
@@ -153,6 +159,8 @@ function Connection:open(cb)
 
   local ok, err = uv.tcp():connect(self._host, self._port, function(cli, err)
     if err then return self:close(err) end
+
+    self._ee:emit('open')
 
     cli:start_read(function(cli, err, data)
       if err then return self._stream:halt(err) end
@@ -223,6 +231,8 @@ function Connection:close(err, cb)
       self._stream:reset(err or EOF)
       call_q(self._close_q, self, err)
       self._delay_q:reset()
+
+      self._ee:emit('close')
     end)
   end
 
