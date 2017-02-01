@@ -14,6 +14,8 @@ local ut = require "lluv.utils"
 
 local NULL = {}
 
+local unpack = unpack or table.unpack
+
 local RedisError = ut.class() do
 
 function RedisError:__init(no, name, msg, ext)
