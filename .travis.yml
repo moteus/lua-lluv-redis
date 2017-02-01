@@ -2,31 +2,56 @@ language: c
 
 sudo: false
 
-env:
-  global:
-    - LUAROCKS=2.2.0
-  matrix:
-    - LUA=lua5.1
-    # - LUA=lua5.2
-    # - LUA=lua5.3
-    # - LUA=luajit
+matrix:
+  include:
+    - compiler: ": Lua51"
+      env: LUA="lua 5.1"
+      os: linux
+    - compiler: ": Lua52"
+      env: LUA="lua 5.2"
+      os: linux
+    - compiler: ": Lua53"
+      env: LUA="lua 5.3"
+      os: linux
+    - compiler: ": LuaJIT20"
+      env: LUA="luajit 2.0"
+      os: linux
+    - compiler: ": LuaJIT21"
+      env: LUA="luajit 2.1"
+      os: linux
+    # - compiler: ": Lua51-osx"
+    #   env: LUA="lua 5.1"
+    #   os: osx
+
+services:
+  - redis-server
+
+cache:
+  directories:
+    - here
+    - $HOME/.cache/pip
 
 branches:
   only:
     - master
 
-services:
-  - redis-server
-
 before_install:
-  - source .travis/setenv_lua.sh
-  - bash .travis/setup_uv.sh
-  - luarocks install luacov-coveralls
-  - luarocks install lunitx
-  - luarocks install lluv --server=http://rocks.moonscript.org/dev UV_DIR=$TRAVIS_BUILD_DIR/libuv
+  - export CC=gcc
+  - gcc --version
+  - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then export PATH=$PATH:~/Library/Python/2.7/bin/; fi
+  - pip install --user hererocks
+  - hererocks here -r^ --$LUA
+  - source here/bin/activate
+  - luarocks show lluv > /dev/null 2>&1 || bash .travis/setup_uv.sh
 
 install:
+  - luarocks show lluv > /dev/null 2>&1 || luarocks install lluv UV_DIR=$TRAVIS_BUILD_DIR/libuv
   - luarocks make rockspecs/lluv-redis-scm-0.rockspec 
+
+before_script:
+  - luarocks show lua-curl         > /dev/null 2>&1 || luarocks install lua-curl
+  - luarocks show luacov-coveralls > /dev/null 2>&1 || luarocks install luacov-coveralls
+  - luarocks show lunitx           > /dev/null 2>&1 || luarocks install lunitx
 
 script: 
   - cd test
