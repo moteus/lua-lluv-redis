@@ -30,6 +30,23 @@ describe('lluv.Redis test', function()
         done()
       end)
     end)
+
+    it('should fail if connection not opende', function(done) async()
+      redis:close(function()
+        assert.error(function() redis:ping() end)
+        done()
+      end)
+    end)
+
+    it('Fail create connection with invalid scheme', function(done) async()
+      local client
+      assert.error(function()
+        client = Redis.Connection.new{server = 'tcp://127.0.0.1'}
+      end)
+      if client then client:close() end
+      done()
+    end)
+
   end)
 
   describe('events test', function()
