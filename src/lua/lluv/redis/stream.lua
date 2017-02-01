@@ -413,7 +413,7 @@ function RedisCmdStream:execute()
 
           if msg == string.lower(task[CMD]) then
             self._queue:pop()
-            cb(self._self, nil, t, e)
+            cb(self._self, decoder(nil, task[DATA]))
           else
             -- This is not response to command. so we have to `restart` task again
             task[DATA], task[STATE] = nil

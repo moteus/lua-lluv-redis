@@ -1250,6 +1250,60 @@ it('should fail with invalid async int message', function()
   assert_nil(halt_called)
 end)
 
+it('should handle multiple subscribes', function()
+  local typ, ch, msg, called, cmd_called
+  stream:on_command(PASS)
+  :on_message(function(self, mtyp, channel, message)
+    called = true
+    typ, ch, msg = mtyp, channel, message
+  end)
+
+  stream:command({"SUBSCRIBE", "hello"}, function(_, err, res)
+    cmd_called = true
+    assert_nil(err)
+  end)
+
+  stream:append"*3\r\n"
+  stream:append"$9\r\n"
+  stream:append"subscribe\r\n"
+  stream:append"$5\r\n"
+  stream:append"hello\r\n"
+  stream:append":1\r\n"
+  stream:execute()
+
+  assert_true(called)
+  assert_equal("subscribe", typ)
+  assert_equal("hello",     ch)
+  assert_equal(1,           msg)
+
+  assert_true(cmd_called)
+
+  cmd_called, called = nil
+
+  stream:command({"SUBSCRIBE", "hello"}, function(_, err, res)
+    cmd_called = true
+    assert_table(res)
+  end)
+
+  stream:append"*3\r\n"
+  stream:append"$9\r\n"
+  stream:append"subscribe\r\n"
+  stream:append"$5\r\n"
+  stream:append"world\r\n"
+  stream:append":2\r\n"
+  stream:execute()
+
+  assert_true(called)
+  assert_equal("subscribe", typ)
+  assert_equal("world",     ch)
+  assert_equal(2,           msg)
+
+  assert_true(cmd_called)
+
+  cmd_called, called = nil
+
+end)
+
 end
 
 local ENABLE = true
