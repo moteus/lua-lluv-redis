@@ -50,6 +50,7 @@ install:
   - luarocks make rockspecs/lluv-redis-scm-0.rockspec 
 
 before_script:
+  - luarocks install lua_cliargs 2.5
   - luarocks show stacktraceplus   > /dev/null 2>&1 || luarocks install stacktraceplus
   - luarocks show lua-curl         > /dev/null 2>&1 || luarocks install lua-curl
   - luarocks show luacov-coveralls > /dev/null 2>&1 || luarocks install luacov-coveralls
