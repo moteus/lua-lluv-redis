@@ -320,6 +320,11 @@ end
 function RedisCmdStream:_handle_async_message(payload)
   local msg = payload[1]
 
+  if not msg then
+    self:halt(RedisError_EPROTO('unexpected message in pubsub mode: <UNKNOWN>'))
+    return
+  end
+
   if SUBSCRIBE_COMMANDS[msg] then
     local channels = payload[3]
     if channels == 0 then self._sub = nil end

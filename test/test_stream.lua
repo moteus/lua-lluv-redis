@@ -1006,6 +1006,8 @@ it('should fail with message after unsubscribe', function()
   stream:append":2\r\n"
   stream:execute()
 
+  called = false
+
   stream:append"*3\r\n"
   stream:append"$7\r\n"
   stream:append"message\r\n"
@@ -1128,6 +1130,124 @@ it('should proceed error responses in sub mode', function()
   stream:execute()
   assert_equal(3, ping_called)
 
+end)
+
+it('should fail with invalid async array message', function()
+  local typ, ch, msg, called, halt_called
+  stream:on_command(PASS)
+  :on_message(function(self, mtyp, channel, message)
+    called = true
+    typ, ch, msg = mtyp, channel, message
+  end)
+  :on_halt(function(self, err)
+    halt_called = true
+    assert(RedisStream.IsError(err))
+    assert_equal('REDIS',  err:cat())
+    assert_equal('EPROTO', err:name())
+    assert_match('REDIS',  tostring(err))
+    assert_match('EPROTO', tostring(err))
+  end)
+
+  stream:command({"SUBSCRIBE", "hello"}, PASS)
+
+  stream:append"*3\r\n"
+  stream:append"$9\r\n"
+  stream:append"subscribe\r\n"
+  stream:append"$5\r\n"
+  stream:append"hello\r\n"
+  stream:append":2\r\n"
+  stream:execute()
+
+  called = false
+
+  stream:append"*3\r\n"
+  stream:append"$11\r\n"
+  stream:append"unsupported\r\n"
+  stream:append"$5\r\n"
+  stream:append"hello\r\n"
+  stream:append"$7\r\n"
+  stream:append"message\r\n"
+  assert_pass(function()
+    stream:execute()
+  end)
+
+  assert_true(halt_called)
+end)
+
+it('should fail with invalid async empty array message', function()
+  local typ, ch, msg, called, halt_called
+  stream:on_command(PASS)
+  :on_message(function(self, mtyp, channel, message)
+    called = true
+    typ, ch, msg = mtyp, channel, message
+  end)
+  :on_halt(function(self, err)
+    halt_called = true
+    assert(RedisStream.IsError(err))
+    assert_equal('REDIS',  err:cat())
+    assert_equal('EPROTO', err:name())
+    assert_match('REDIS',  tostring(err))
+    assert_match('EPROTO', tostring(err))
+  end)
+
+  stream:command({"SUBSCRIBE", "hello"}, PASS)
+
+  stream:append"*3\r\n"
+  stream:append"$9\r\n"
+  stream:append"subscribe\r\n"
+  stream:append"$5\r\n"
+  stream:append"hello\r\n"
+  stream:append":2\r\n"
+  stream:execute()
+
+  called = false
+
+  stream:append"*3\r\n"
+  stream:append"$-1\r\n"
+  stream:append"$5\r\n"
+  stream:append"hello\r\n"
+  stream:append"$7\r\n"
+  stream:append"message\r\n"
+  assert_pass(function()
+    stream:execute()
+  end)
+
+  assert_true(halt_called)
+end)
+
+it('should fail with invalid async int message', function()
+  local typ, ch, msg, called, halt_called
+  stream:on_command(PASS)
+  :on_message(function(self, mtyp, channel, message)
+    called = true
+    typ, ch, msg = mtyp, channel, message
+  end)
+  :on_halt(function(self, err)
+    halt_called = true
+    assert(RedisStream.IsError(err))
+    assert_equal('REDIS',  err:cat())
+    assert_equal('EPROTO', err:name())
+    assert_match('REDIS',  tostring(err))
+    assert_match('EPROTO', tostring(err))
+  end)
+
+  stream:command({"SUBSCRIBE", "hello"}, PASS)
+
+  stream:append"*3\r\n"
+  stream:append"$9\r\n"
+  stream:append"subscribe\r\n"
+  stream:append"$5\r\n"
+  stream:append"hello\r\n"
+  stream:append":2\r\n"
+  stream:execute()
+
+  stream:append":47\r\n"
+
+  assert_error(function()
+    stream:execute()
+  end)
+
+  assert_nil(halt_called)
 end)
 
 end
