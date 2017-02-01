@@ -79,6 +79,22 @@ local ARR  = '*'
 local CB, STATE, DATA, CMD, DECODER = 1, 2, 3, 4, 5
 local I, N = 3, 1
 
+local SUBSCRIBE_COMMANDS = {
+  subscribe    = true; SUBSCRIBE    = true;
+  unsubscribe  = true; UNSUBSCRIBE  = true;
+  psubscribe   = true; PSUBSCRIBE   = true;
+  punsubscribe = true; PUNSUBSCRIBE = true;
+}
+
+local SUBSCRIBE_MESSAGES = {
+  subscribe    = true; SUBSCRIBE    = true; -- [channel, total_channels]
+  unsubscribe  = true; UNSUBSCRIBE  = true; -- [channel, total_channels]
+  psubscribe   = true; PSUBSCRIBE   = true; -- [pattern, total_channels]
+  punsubscribe = true; PUNSUBSCRIBE = true; -- [pattern, total_channels]
+  message      = true; MESSAGE      = true; -- [channel, data]
+  pmessage     = true; PMESSAGE     = true; -- [pattern, channel, data]
+}
+
 local function pass(err, data) return err, data end
 
 local function iclone(t, n)
@@ -301,6 +317,21 @@ function RedisCmdStream:_next_data_task()
   end
 end
 
+function RedisCmdStream:_handle_async_message(payload)
+  local msg = payload[1]
+
+  if SUBSCRIBE_COMMANDS[msg] then
+    local channels = payload[3]
+    if channels == 0 then self._sub = nil end
+  end
+
+  if SUBSCRIBE_MESSAGES[msg] then
+    if self._on_message then self._on_message(self._self, unpack(payload)) end
+  else
+    self:halt(RedisError_EPROTO('unexpected message in pubsub mode: ' .. msg))
+  end
+end
+
 function RedisCmdStream:execute()
   while true do
     local task, err = self:_next_data_task()
@@ -319,16 +350,76 @@ function RedisCmdStream:execute()
         return
       end
 
-      -- we are in SUBSCRIBE mode. So in fact we can get only errors or array with message
-      -- I stay check for `message` just in case this would be changed in the future
-      if self._sub and task[DATA][1] == 'message' then
-        -- published message should not change task queue.
-        -- so we just `clear` task object
-        local channel, data = task[DATA][2], task[DATA][3]
-        task[DATA], task[STATE] = nil
+      if SUBSCRIBE_COMMANDS[ task[CMD] ]
+        or (self._sub and task[DATA][1] and SUBSCRIBE_MESSAGES[ task[DATA][1] ])
+      then
+        -- There posssible several states
+        -- - 1 We in RR mode and send [p]subscribe with single channels
+        -- - 2 We in RR mode and send [p]subscribe with multiple channels
+        -- - 3 We in RR mode and send [p]unsubscribe with single channels
+        -- - 4 We in RR mode and send [p]unsubscribe with multiple channels
+        -- - 5 We in PS mode and send [p]subscribe with single channels
+        -- - 6 We in PS mode and send [p]subscribe with multiple channels
+        -- - 7 We in PS mode and send [p]unsubscribe with single channels
+        -- - 7.1 We unsubscribe from not last channel and we still in PS mode
+        -- - 7.2 We unsubscribe from last channel and switch to RR mode
+        -- - 8 We in PS mode and send [p]unsubscribe with multiple channels
+        -- - 8.1 We unsubscribe from not last channels and we still in PS mode
+        -- - 8.2 We unsubscribe from not last channel using not last one in list
+        -- -     e.g. we have subscriptions to `a`, `b` and `c` and send command
+        -- -     `unsubscribe a b c d e`.
+        -- - 8.3 We unsubscribe from not last channel using last one in list
+        -- -     e.g. we have subscriptions to `a`, `b` and `c` and send command
+        -- -     `unsubscribe a b d e c`.
+        -- 
+        -- * PP - PubSub RR - RequesResponse
+        -- 
+        -- Main problem with unsubscribe command. It sends async messages
+        -- even if server not in pubsub mode. E.g. if we call `unsubscribe a b`
+        -- and then `get a`. Server send response
+        --   {'unsubscribe' 'a', 0}
+        --   {'unsubscribe' 'b', 0}
+        --   'some_a_value'
+        -- And I do not see any easy way how to distinct asyn message from real
+        -- response. E.g. `redis-cli` just returns `{'unsubscribe' 'b', 0}` as
+        -- result for `get a` command. And `some_a_value` as result for any next
+        -- command. And so on. 
+        -- So I strongly recomended do not use `unsubscribe` with multiple channels
+        -- or do not use same connection for pubsub and for regular data transmition
+        -- 
+        -- Because of that all 8.x can lead to unexpected/not correct results
 
-        if self._on_message then self._on_message(self._self, channel, data) end
+        local payload = task[DATA]
 
+        if (task ~= self._sub) or (self._sub == nil) then
+          -- we handle real command response.
+          -- we handle first message as result. This is correct only if use subscribe/unsubscribe
+          -- with only one channel. but if you send `subscribe a b` and then `subscribe c`
+          -- then you get `[subscribe b 2]` as result for your second subscribe.
+
+          local msg = payload[1]
+
+          if SUBSCRIBE_COMMANDS[ msg ] and not self._sub then
+            local channels = payload[3]
+            if channels > 0 then
+              self._sub = {nil, nil, nil, task[CMD], decoder or pass}
+            end
+          end
+
+          if msg == string.lower(task[CMD]) then
+            self._queue:pop()
+            cb(self._self, nil, t, e)
+          else
+            -- This is not response to command. so we have to `restart` task again
+            task[DATA], task[STATE] = nil
+          end
+        else 
+          -- task is fake task so we have reset it by hand
+          task[DATA], task[STATE] = nil
+        end
+
+        --! @fixme do not call anythig if `cb` calls `halt`
+        self:_handle_async_message(payload)
       else
         self._queue:pop()
         if task[CMD] == 'EXEC' then
@@ -351,18 +442,6 @@ function RedisCmdStream:execute()
             i = i + 1
           end
           cb(self._self, nil, t, e)
-        elseif
-          task[CMD] == 'SUBSCRIBE'  or task[CMD] == 'UNSUBSCRIBE'  or 
-          task[CMD] == 'PSUBSCRIBE' or task[CMD] == 'PUNSUBSCRIBE' 
-        then
-          local channels = task[DATA][3]
-          if channels == 0 then self._sub = nil
-          elseif not self._sub then
-            -- we create fake task
-            self._sub = {nil, nil, nil, cmd_name, decoder or pass}
-          end
-
-          cb(self._self, decoder(nil, task[DATA]))
         else
           cb(self._self, decoder(nil, task[DATA]))
         end

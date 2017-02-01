@@ -875,11 +875,11 @@ function setup()
 end
 
 it('should subscribe', function()
-  local ch, msg, called
+  local typ, ch, msg, called
   stream:on_command(PASS)
-  :on_message(function(self, channel, message)
+  :on_message(function(self, mtyp, channel, message)
     called = true
-    ch, msg = channel, message
+    typ, ch, msg = mtyp, channel, message
   end)
 
   stream:command({"SUBSCRIBE", "hello"}, PASS)
@@ -889,21 +889,69 @@ it('should subscribe', function()
   stream:append"subscribe\r\n"
   stream:append"$5\r\n"
   stream:append"hello\r\n"
-  stream:append":2\r\n"
+  stream:append":1\r\n"
   stream:execute()
+
+  assert_true(called)
+  assert_equal("subscribe", typ)
+  assert_equal("hello",     ch)
+  assert_equal(1,           msg)
+
+  called = false
 
   stream:append"*3\r\n"
   stream:append"$7\r\n"
   stream:append"message\r\n"
   stream:append"$5\r\n"
   stream:append"hello\r\n"
-  stream:append"$7\r\n"
-  stream:append"message\r\n"
+  stream:append"$4\r\n"
+  stream:append"text\r\n"
   stream:execute()
   
   assert_true(called)
-  assert_equal("hello",   ch)
-  assert_equal("message", msg)
+  assert_equal("message",  typ)
+  assert_equal("hello",    ch)
+  assert_equal("text",     msg)
+end)
+
+it('should accept message before subscribe response', function()
+  local typ, ch, msg, called
+  stream:on_command(PASS)
+  :on_message(function(self, mtyp, channel, message)
+    called = true
+    typ, ch, msg = mtyp, channel, message
+  end)
+
+  stream:command({"SUBSCRIBE", "hello"}, PASS)
+
+  stream:append"*3\r\n"
+  stream:append"$7\r\n"
+  stream:append"message\r\n"
+  stream:append"$5\r\n"
+  stream:append"hello\r\n"
+  stream:append"$4\r\n"
+  stream:append"text\r\n"
+  stream:execute()
+
+  assert_true(called)
+  assert_equal("message",  typ)
+  assert_equal("hello",    ch)
+  assert_equal("text",     msg)
+
+  called = false
+
+  stream:append"*3\r\n"
+  stream:append"$9\r\n"
+  stream:append"subscribe\r\n"
+  stream:append"$5\r\n"
+  stream:append"hello\r\n"
+  stream:append":1\r\n"
+  stream:execute()
+
+  assert_true(called)
+  assert_equal("subscribe", typ)
+  assert_equal("hello",     ch)
+  assert_equal(1,           msg)
 end)
 
 it('should halt with unexpected messages', function()
@@ -933,11 +981,11 @@ it('should halt with unexpected messages', function()
 end)
 
 it('should fail with message after unsubscribe', function()
-  local ch, msg, called, halt_called
+  local typ, ch, msg, called, halt_called
   stream:on_command(PASS)
-  :on_message(function(self, channel, message)
+  :on_message(function(self, mtyp, channel, message)
     called = true
-    ch, msg = channel, message
+    typ, ch, msg = mtyp, channel, message
   end)
   :on_halt(function(self, err)
     halt_called = true
@@ -995,11 +1043,11 @@ it('should fail with message after unsubscribe', function()
 end)
 
 it('should proceed error responses in sub mode', function()
-  local ch, msg, called
+  local typ, ch, msg, called
   stream:on_command(PASS)
-  :on_message(function(self, channel, message)
+  :on_message(function(self, mtyp, channel, message)
     called = true
-    ch, msg = channel, message
+    typ, ch, msg = mtyp, channel, message
   end)
 
   stream:command({"SUBSCRIBE", "hello"}, PASS)
@@ -1026,6 +1074,13 @@ it('should proceed error responses in sub mode', function()
   stream:append":2\r\n"
   stream:append"-ERR only (P)SUBSCRIBE / (P)UNSUBSCRIBE / QUIT allowed in this context\r\n"
   stream:execute()
+
+  assert_true(called)
+  assert_equal("subscribe", typ)
+  assert_equal("hello",     ch)
+  assert_equal(2,           msg)
+
+  called = false
 
   assert_equal(1, ping_called)
 
@@ -1065,6 +1120,7 @@ it('should proceed error responses in sub mode', function()
   stream:execute()
   assert_equal(2, ping_called)
   assert_true(called)
+  assert_equal("message", typ)
   assert_equal("hello",   ch)
   assert_equal("message", msg)
 
