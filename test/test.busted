@@ -35,6 +35,12 @@ describe('lluv.Redis test', function()
   describe('events test', function()
     local client
 
+    local ECONNRESET = uv.error('LIBUV', uv.ECONNRESET)
+
+    local function reset_connection(object, err)
+      object._stream:halt(err or ECONNRESET)
+    end
+
     it('should hit all events', function(done) async()
       local events = {}
 
@@ -61,6 +67,30 @@ describe('lluv.Redis test', function()
             assert.same({'open', 'ready', 'subscribe', 'message', 'close'}, events)
             done()
           end)
+        end)
+      end)
+    end)
+
+    it('should hit error event', function(done) async()
+      local events = {}
+
+      client = redis:clone()
+
+      client._ee:onAny(function(self, event, ...)
+        events[#events + 1] = {event, ...}
+      end)
+
+      client:open(function(_, err) assert_nil(err) end)
+
+      uv.timer():start(100, function()
+        assert.same({{'open'}, {'ready'}}, events)
+
+        reset_connection(client)
+
+        uv.timer():start(100, function()
+          assert.same({{'open'}, {'ready'}, {'error', ECONNRESET}, {'close'}}, events)
+          assert.is_true(client:closed())
+          done()
         end)
       end)
     end)
