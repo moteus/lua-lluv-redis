@@ -264,6 +264,22 @@ function Connection:__tostring()
   return string.format("Lua UV Redis (%s)", tostring(self._cnn))
 end
 
+function Connection:on(...)
+  return self._ee:on(...)
+end
+
+function Connection:off(...)
+  return self._ee:off(...)
+end
+
+function Connection:onAny(...)
+  return self._ee:onAny(...)
+end
+
+function Connection:offAny(...)
+  return self._ee:offAny(...)
+end
+
 RedisCommander.commands(function(name)
   name = name:lower()
   Connection[name] = function(self, ...)

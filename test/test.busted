@@ -47,7 +47,7 @@ describe('lluv.Redis test', function()
       end)
     end)
 
-    it('should fail if connection not opende', function(done) async()
+    it('should fail if connection not opened', function(done) async()
       redis:close(function()
         assert.error(function() redis:ping() end)
         done()
@@ -79,7 +79,7 @@ describe('lluv.Redis test', function()
 
       client = redis:clone()
 
-      client._ee:onAny(function(self, event, ...)
+      client:onAny(function(self, event, ...)
         events[#events + 1] = event
       end)
 
@@ -109,7 +109,7 @@ describe('lluv.Redis test', function()
 
       client = redis:clone()
 
-      client._ee:onAny(function(self, event, ...)
+      client:onAny(function(self, event, ...)
         events[#events + 1] = {event, ...}
       end)
 
