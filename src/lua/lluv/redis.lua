@@ -232,7 +232,7 @@ function Connection:close(err, cb)
       call_q(self._close_q, self, err)
       self._delay_q:reset()
 
-      self._ee:emit('close')
+      self._ee:emit('close', err)
     end)
   end
 
@@ -280,9 +280,15 @@ function Connection:offAny(...)
   return self._ee:offAny(...)
 end
 
+function Connection:removeAllListeners(...)
+  return self._ee:removeAllListeners(...)
+end
+
 RedisCommander.commands(function(name)
   name = name:lower()
   Connection[name] = function(self, ...)
+    if not self._cnn then
+    end
     return self._commander[name](self._commander, ...)
   end
 end)

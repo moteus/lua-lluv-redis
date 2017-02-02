@@ -109,18 +109,18 @@ describe('lluv.Redis test', function()
 
       client:open(function(_, err) assert_nil(err) end)
 
-      uv.timer():start(100, function()
+      uv.timer():start(500, function()
         assert.same({'open', 'ready'}, events)
 
         client:subscribe('hello', function(_, err) assert_nil(err)
           redis:publish('hello', 'world', function(_, err) assert_nil(err) end)
         end)
 
-        uv.timer():start(100, function()
+        uv.timer():start(500, function()
           assert.same({'open', 'ready', 'subscribe', 'message'}, events)
           client:close(function()  end)
 
-          uv.timer():start(100, function()
+          uv.timer():start(500, function()
             assert.same({'open', 'ready', 'subscribe', 'message', 'close'}, events)
             done()
           end)
@@ -139,16 +139,65 @@ describe('lluv.Redis test', function()
 
       client:open(function(_, err) assert_nil(err) end)
 
-      uv.timer():start(100, function()
+      uv.timer():start(500, function()
         assert.same({{'open'}, {'ready'}}, events)
 
         reset_connection(client)
 
-        uv.timer():start(100, function()
-          assert.same({{'open'}, {'ready'}, {'error', ECONNRESET}, {'close'}}, events)
+        uv.timer():start(500, function()
+          assert.same({{'open'}, {'ready'}, {'error', ECONNRESET}, {'close', ECONNRESET}}, events)
           assert.is_true(client:closed())
           done()
         end)
+      end)
+    end)
+
+    it('close event should pass error', function(done) async()
+      local c1, c2
+
+      redis:on('close', function(self, event, err)
+        assert.equal(ECONNRESET, err)
+        c1 = true
+      end)
+
+      redis:on('error', function(self, event, err)
+        assert.equal(ECONNRESET, err)
+        assert.falsy(c1)
+        c2 = true
+      end)
+
+      reset_connection(redis)
+
+      uv.timer():start(500, function()
+        assert.truthy(c1)
+        assert.truthy(c2)
+        redis:removeAllListeners()
+        done()
+      end)
+    end)
+
+    it('close event should not pass error', function(done) async()
+      local c1, c2
+
+      redis:on('close', function(self, event, err)
+        assert_nil(err)
+        c1 = true
+      end)
+
+      redis:on('error', function(self, event, err)
+        assert.truthy(false, 'Shold not be called')
+      end)
+
+      redis:close(function(self, err)
+        assert_nil(err)
+        c2 = true
+      end)
+
+      uv.timer():start(500, function()
+        assert.truthy(c1)
+        assert.truthy(c2)
+        redis:removeAllListeners()
+        done()
       end)
     end)
 
