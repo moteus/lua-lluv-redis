@@ -18,7 +18,8 @@ local EventEmitter   = require "EventEmitter"
 
 local function ocall(fn, ...) if fn then return fn(...) end end
 
-local EOF   = uv.error("LIBUV", uv.EOF)
+local EOF      = uv.error("LIBUV", uv.EOF)
+local ENOTCONN = uv.error('LIBUV', uv.ENOTCONN)
 
 local function nil_if_empty(t)
   if t and #t == 0 then return nil end
@@ -51,6 +52,10 @@ local function call_q(q, ...)
     if not cb then break end
     cb(...)
   end
+end
+
+local function is_callable(f)
+  return (type(f) == 'function') and f
 end
 
 -------------------------------------------------------------------
@@ -292,7 +297,11 @@ RedisCommander.commands(function(name)
   name = name:lower()
   Connection[name] = function(self, ...)
     if not self._cnn then
+      local cb = select('#', ...) > 0 and is_callable(select(-1, ...))
+      if cb then uv.defer(cb, self, ENOTCONN) end
+      return
     end
+
     return self._commander[name](self._commander, ...)
   end
 end)

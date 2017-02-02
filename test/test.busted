@@ -22,6 +22,8 @@ loop.set_traceback(stp and stp.stacktrace or debug.traceback)
 describe('lluv.Redis test', function()
   local redis
 
+  local ENOTCONN = uv.error('LIBUV', uv.ENOTCONN)
+
   describe('Basic commands test', function()
     it('basic ping', function(done) async()
       redis:ping(function(self, err, res)
@@ -47,10 +49,21 @@ describe('lluv.Redis test', function()
       end)
     end)
 
-    it('should fail if connection not opened', function(done) async()
+    it('should return error if connection not opened', function(done) async()
       redis:close(function()
-        assert.error(function() redis:ping() end)
-        done()
+        redis:on('error', function()
+          assert.truthy(false, 'Should not be called')
+        end)
+
+        assert.no_error(function() redis:ping() end)
+        assert.no_error(function() redis:echo('hello') end)
+
+        redis:ping(function(self, err)
+          assert.equal(redis, self)
+          assert.equal(ENOTCONN, err)
+          redis:off('error')
+          done()
+        end)
       end)
     end)
 
