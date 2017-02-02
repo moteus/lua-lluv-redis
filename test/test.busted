@@ -54,6 +54,30 @@ describe('lluv.Redis test', function()
       end)
     end)
 
+    it('should not close/error emit in case of error in command', function(done) async()
+      redis:on('close', function(self, event, err)
+        assert.truthy(false, 'Should not be called')
+      end)
+
+      redis:on('error', function(self, event, err)
+        assert.truthy(false, 'Should not be called')
+      end)
+
+      local called
+      redis:evalsha(function(self, err)
+        called = true
+        assert.not_nil(err)
+        assert.equal('REDIS', err:cat())
+        assert.equal('ERR',   err:name())
+      end)
+
+      uv.timer():start(500, function()
+        redis:off('close')
+        assert.truthy(called)
+        done()
+      end)
+    end)
+
     it('Fail create connection with invalid scheme', function(done) async()
       local client
       assert.error(function()
