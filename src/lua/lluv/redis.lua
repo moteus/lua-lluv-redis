@@ -158,7 +158,10 @@ function Connection:open(cb)
   local cmd -- Init command
 
   local ok, err = uv.tcp():connect(self._host, self._port, function(cli, err)
-    if err then return self:close(err) end
+    if err then
+      self._ee:emit('error', err)
+      return self:close(err)
+    end
 
     self._ee:emit('open')
 
@@ -188,6 +191,7 @@ function Connection:open(cb)
 
         if err then
           called = true
+          self._ee:emit('error', err)
           return self:close(err)
         end
 

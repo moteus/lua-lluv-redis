@@ -201,6 +201,31 @@ describe('lluv.Redis test', function()
       end)
     end)
 
+    it('close with error should not raise error event', function(done) async()
+      local c1, c2
+
+      redis:on('close', function(self, event, err)
+        assert.equal(ECONNRESET, err)
+        c1 = true
+      end)
+
+      redis:on('error', function(self, event, err)
+        assert.truthy(false, 'Shold not be called')
+      end)
+
+      redis:close(ECONNRESET, function(self, err)
+        assert.equal(ECONNRESET, err)
+        c2 = true
+      end)
+
+      uv.timer():start(500, function()
+        assert.truthy(c1)
+        assert.truthy(c2)
+        redis:removeAllListeners()
+        done()
+      end)
+    end)
+
     after_each(function(done) async()
       if client then
         client:close(function() done() end)
