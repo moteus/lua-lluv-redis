@@ -25,7 +25,6 @@ function setup()
 end
 
 it("provide public API", function()
-  assert_not_nil(RedisStream.NULL)
   assert_function(stream.execute)
   assert_function(stream.append)
   assert_function(stream.command)
