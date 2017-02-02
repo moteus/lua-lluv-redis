@@ -278,6 +278,92 @@ describe('lluv.Redis test', function()
     end)
   end)
 
+  describe('PubSub test', function()
+    it('should handle unsubscribe with multiple channels in ReqRep mode', function(done) async()
+      local c1
+
+      redis:unsubscribe('a', 'b', 'c', function(self, err, res) assert_nil(err)
+        assert.same({n=3, 'unsubscribe', 'c', 0}, res)
+        c1 = true
+      end)
+
+      redis:echo('PONG', function(self, err, res) assert_nil(err)
+        assert.equal('PONG', res)
+        assert.truthy(true)
+        done()
+      end)
+    end)
+
+    it('should handle unsubscribe without channels in ReqRep mode', function(done) async()
+      local c1
+
+      redis:unsubscribe(function(self, err, res) assert_nil(err)
+        assert.same({n=3, 'unsubscribe', nil, 0}, res)
+        c1 = true
+      end)
+
+      redis:echo('PONG', function(self, err, res) assert_nil(err)
+        assert.equal('PONG', res)
+        assert.truthy(c1)
+        done()
+      end)
+    end)
+
+    it('should switch back to ReqRep mode', function(done) async()
+      local c1
+
+      redis:subscribe('a', 'b', 'c', function(_, err, res) assert_nil(err)
+        assert.same({n=3, 'subscribe', 'a', 1}, res)
+        redis:echo('hello', function(_, err, res)
+          assert.not_nil(err, res)
+        end)
+
+        redis:unsubscribe('a', 'b', 'c', 'd', 'e', 'f', function(_, err, res) assert_nil(err)
+          assert.same({n=3, 'unsubscribe', 'f', 0}, res)
+          c1 = true
+        end)
+
+        redis:echo('PONG', function(self, err, res) assert_nil(err)
+          assert.equal('PONG', res)
+          assert.truthy(c1)
+          done()
+        end)
+      end)
+
+    end)
+
+    it('should handle PING in PubSub mode', function(done) async()
+      local c1, c2
+
+      redis:subscribe('a', 'b', 'c', function(_, err, res) assert_nil(err)
+        assert.same({n=3, 'subscribe', 'a', 1}, res)
+        redis:ping('hello', function(_, err, res) assert_nil(err)
+          assert.same({n = 2, 'pong', 'hello'}, res)
+          c1 = true
+        end)
+
+        redis:unsubscribe('a', 'b', 'c', 'd', 'e', 'f', function(_, err, res) assert_nil(err)
+          assert.same({n=3, 'unsubscribe', 'f', 0}, res)
+          c1 = true
+        end)
+
+        redis:ping(function(self, err, res) assert_nil(err)
+          assert.equal('PONG', res)
+          assert.truthy(c1)
+          assert.truthy(c2)
+          done()
+        end)
+      end)
+
+      redis:ping('hello', function(_, err, res) assert_nil(err)
+        assert.same({n = 2, 'pong', 'hello'}, res)
+        c2 = true
+      end)
+
+    end)
+
+  end)
+
   before_each(function(done) async()
     redis = Redis.Connection.new{server = URL}
     redis:open(function(self, err) assert.is_nil(err)

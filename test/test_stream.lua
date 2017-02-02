@@ -11,6 +11,29 @@ local RUN = utils.RUN
 local IT, CMD, PASS = utils.IT, utils.CMD, utils.PASS
 local nreturn, is_equal = utils.nreturn, utils.is_equal
 local C = function(t) return table.concat(t, '\r\n') .. '\r\n' end
+local BULK = function(s) return string.format("$%d\r\n%s", #s, s) end
+local NUM  = function(s) return string.format(":%d", s) end
+
+local function encode_element(e)
+  if type(e) == 'number' then return NUM(e) end
+  if e == nil then return '$-1' end
+  return BULK(e)
+end
+
+local function build(t)
+  if type(t) ~= 'table' then return encode_element(t) .. '\r\n' end
+  local r = {}
+  for i = 1, t.n or #t do
+    r[i] = encode_element(t[i])
+  end
+  return '*' .. tostring(#r) .. '\r\n' .. table.concat(r, '\r\n') .. '\r\n'
+end
+
+local function sub_resp(m, c, n)
+  return build{n=3, m, c, n}
+end
+
+local R = build
 
 local ENABLE = true
 
@@ -871,6 +894,9 @@ local stream
 
 function setup()
   stream = assert(RedisStream.new())
+  function stream:append_r(t)
+    return stream:append(R(t))
+  end
 end
 
 it('should subscribe', function()
@@ -883,13 +909,7 @@ it('should subscribe', function()
 
   stream:command({"SUBSCRIBE", "hello"}, PASS)
 
-  stream:append"*3\r\n"
-  stream:append"$9\r\n"
-  stream:append"subscribe\r\n"
-  stream:append"$5\r\n"
-  stream:append"hello\r\n"
-  stream:append":1\r\n"
-  stream:execute()
+  stream:append_r{"subscribe", "hello", 1}:execute()
 
   assert_true(called)
   assert_equal("subscribe", typ)
@@ -898,15 +918,8 @@ it('should subscribe', function()
 
   called = false
 
-  stream:append"*3\r\n"
-  stream:append"$7\r\n"
-  stream:append"message\r\n"
-  stream:append"$5\r\n"
-  stream:append"hello\r\n"
-  stream:append"$4\r\n"
-  stream:append"text\r\n"
-  stream:execute()
-  
+  stream:append_r{"message", "hello", "text"}:execute()
+
   assert_true(called)
   assert_equal("message",  typ)
   assert_equal("hello",    ch)
@@ -923,14 +936,7 @@ it('should accept message before subscribe response', function()
 
   stream:command({"SUBSCRIBE", "hello"}, PASS)
 
-  stream:append"*3\r\n"
-  stream:append"$7\r\n"
-  stream:append"message\r\n"
-  stream:append"$5\r\n"
-  stream:append"hello\r\n"
-  stream:append"$4\r\n"
-  stream:append"text\r\n"
-  stream:execute()
+  stream:append_r{"message", "hello", "text"}:execute()
 
   assert_true(called)
   assert_equal("message",  typ)
@@ -939,13 +945,7 @@ it('should accept message before subscribe response', function()
 
   called = false
 
-  stream:append"*3\r\n"
-  stream:append"$9\r\n"
-  stream:append"subscribe\r\n"
-  stream:append"$5\r\n"
-  stream:append"hello\r\n"
-  stream:append":1\r\n"
-  stream:execute()
+  stream:append_r{"subscribe", "hello", 1}:execute()
 
   assert_true(called)
   assert_equal("subscribe", typ)
@@ -965,13 +965,7 @@ it('should halt with unexpected messages', function()
     assert_match('EPROTO', tostring(err))
   end)
 
-  stream:append"*3\r\n"
-  stream:append"$7\r\n"
-  stream:append"message\r\n"
-  stream:append"$5\r\n"
-  stream:append"hello\r\n"
-  stream:append"$7\r\n"
-  stream:append"message\r\n"
+  stream:append_r{"message", "hello", "message"}:execute()
 
   assert_pass(function()
     stream:execute()
@@ -997,24 +991,11 @@ it('should fail with message after unsubscribe', function()
 
   stream:command({"SUBSCRIBE", "hello"}, PASS)
 
-  stream:append"*3\r\n"
-  stream:append"$9\r\n"
-  stream:append"subscribe\r\n"
-  stream:append"$5\r\n"
-  stream:append"hello\r\n"
-  stream:append":2\r\n"
-  stream:execute()
+  stream:append_r{"subscribe", "hello", 2}:execute()
 
   called = false
 
-  stream:append"*3\r\n"
-  stream:append"$7\r\n"
-  stream:append"message\r\n"
-  stream:append"$5\r\n"
-  stream:append"hello\r\n"
-  stream:append"$7\r\n"
-  stream:append"message\r\n"
-  stream:execute()
+  stream:append_r{"message", "hello", "message"}:execute()
 
   assert_true(called)
   assert_equal("hello",   ch)
@@ -1022,24 +1003,14 @@ it('should fail with message after unsubscribe', function()
 
   stream:command({"UNSUBSCRIBE", "hello"}, PASS)
 
-  stream:append"*3\r\n"
-  stream:append"$11\r\n"
-  stream:append"unsubscribe\r\n"
-  stream:append"$5\r\n"
-  stream:append"hello\r\n"
-  stream:append":0\r\n"
-  stream:execute()
+  stream:append_r{"unsubscribe", "hello", 0}:execute()
 
-  stream:append"*3\r\n"
-  stream:append"$7\r\n"
-  stream:append"message\r\n"
-  stream:append"$5\r\n"
-  stream:append"hello\r\n"
-  stream:append"$7\r\n"
-  stream:append"message\r\n"
+  stream:append_r{"message", "hello", "message"}:execute()
+
   assert_pass(function()
     stream:execute()
   end)
+
   assert_true(halt_called)
 end)
 
@@ -1067,12 +1038,7 @@ it('should proceed error responses in sub mode', function()
     assert_equal('PING',                                                              err:ext() )
   end)
 
-  stream:append"*3\r\n"
-  stream:append"$9\r\n"
-  stream:append"subscribe\r\n"
-  stream:append"$5\r\n"
-  stream:append"hello\r\n"
-  stream:append":2\r\n"
+  stream:append_r{"subscribe", "hello", 2}
   stream:append"-ERR only (P)SUBSCRIBE / (P)UNSUBSCRIBE / QUIT allowed in this context\r\n"
   stream:execute()
 
@@ -1111,14 +1077,8 @@ it('should proceed error responses in sub mode', function()
   stream:execute()
   assert_equal(2, ping_called)
 
-  stream:append"*3\r\n"
-  stream:append"$7\r\n"
-  stream:append"message\r\n"
-  stream:append"$5\r\n"
-  stream:append"hello\r\n"
-  stream:append"$7\r\n"
-  stream:append"message\r\n"
-  stream:execute()
+  stream:append_r{"message", "hello", "message"}:execute()
+
   assert_equal(2, ping_called)
   assert_true(called)
   assert_equal("message", typ)
@@ -1149,23 +1109,12 @@ it('should fail with invalid async array message', function()
 
   stream:command({"SUBSCRIBE", "hello"}, PASS)
 
-  stream:append"*3\r\n"
-  stream:append"$9\r\n"
-  stream:append"subscribe\r\n"
-  stream:append"$5\r\n"
-  stream:append"hello\r\n"
-  stream:append":2\r\n"
-  stream:execute()
+  stream:append_r{"subscribe", "hello", 2}:execute()
 
   called = false
 
-  stream:append"*3\r\n"
-  stream:append"$11\r\n"
-  stream:append"unsupported\r\n"
-  stream:append"$5\r\n"
-  stream:append"hello\r\n"
-  stream:append"$7\r\n"
-  stream:append"message\r\n"
+  stream:append_r{"unsupported", "hello", "message"}:execute()
+
   assert_pass(function()
     stream:execute()
   end)
@@ -1191,22 +1140,12 @@ it('should fail with invalid async empty array message', function()
 
   stream:command({"SUBSCRIBE", "hello"}, PASS)
 
-  stream:append"*3\r\n"
-  stream:append"$9\r\n"
-  stream:append"subscribe\r\n"
-  stream:append"$5\r\n"
-  stream:append"hello\r\n"
-  stream:append":2\r\n"
-  stream:execute()
+  stream:append_r{"subscribe", "hello", 2}:execute()
 
   called = false
 
-  stream:append"*3\r\n"
-  stream:append"$-1\r\n"
-  stream:append"$5\r\n"
-  stream:append"hello\r\n"
-  stream:append"$7\r\n"
-  stream:append"message\r\n"
+  stream:append_r{n=3, nil, "hello", "message"}
+
   assert_pass(function()
     stream:execute()
   end)
@@ -1232,15 +1171,9 @@ it('should fail with invalid async int message', function()
 
   stream:command({"SUBSCRIBE", "hello"}, PASS)
 
-  stream:append"*3\r\n"
-  stream:append"$9\r\n"
-  stream:append"subscribe\r\n"
-  stream:append"$5\r\n"
-  stream:append"hello\r\n"
-  stream:append":2\r\n"
-  stream:execute()
+  stream:append_r{"subscribe", "hello", 2}:execute()
 
-  stream:append":47\r\n"
+  stream:append_r(47)
 
   assert_error(function()
     stream:execute()
@@ -1262,13 +1195,7 @@ it('should handle multiple subscribes', function()
     assert_nil(err)
   end)
 
-  stream:append"*3\r\n"
-  stream:append"$9\r\n"
-  stream:append"subscribe\r\n"
-  stream:append"$5\r\n"
-  stream:append"hello\r\n"
-  stream:append":1\r\n"
-  stream:execute()
+  stream:append_r{"subscribe", "hello", 1}:execute()
 
   assert_true(called)
   assert_equal("subscribe", typ)
@@ -1284,13 +1211,7 @@ it('should handle multiple subscribes', function()
     assert_table(res)
   end)
 
-  stream:append"*3\r\n"
-  stream:append"$9\r\n"
-  stream:append"subscribe\r\n"
-  stream:append"$5\r\n"
-  stream:append"world\r\n"
-  stream:append":2\r\n"
-  stream:execute()
+  stream:append_r{"subscribe", "world", 2}:execute()
 
   assert_true(called)
   assert_equal("subscribe", typ)
@@ -1301,6 +1222,239 @@ it('should handle multiple subscribes', function()
 
   cmd_called, called = nil
 
+end)
+
+it('should handle unsubscribe with multiple channels in ReqRep mode', function()
+  local typ, ch, msg, called, cmd_called
+  stream:on_command(PASS)
+  :on_message(function(self, mtyp, channel, message)
+    called = true
+    typ, ch, msg = mtyp, channel, message
+  end)
+
+  stream:command({"UNSUBSCRIBE", "hello", "world"}, function(_, err, res)
+    cmd_called = true
+    assert_nil(err)
+  end)
+
+  stream:append_r{"unsubscribe", "hello", 0}:execute()
+
+  assert_true(called)
+  assert_equal("unsubscribe", typ)
+  assert_equal("hello",       ch)
+  assert_equal(0,             msg)
+
+  assert_nil(cmd_called)
+
+  called = nil
+
+  stream:append_r{"unsubscribe", "world", 0}:execute()
+
+  assert_true(called)
+  assert_equal("unsubscribe", typ)
+  assert_equal("world",       ch)
+  assert_equal(0,             msg)
+  assert_true(cmd_called)
+
+end)
+
+it('should handle unsubscribe without channel and without subscribers', function()
+  local typ, ch, msg, called, cmd_called
+  stream:on_command(PASS)
+  :on_message(function(self, mtyp, channel, message)
+    called = true
+    typ, ch, msg = mtyp, channel, message
+  end)
+
+  stream:command({"UNSUBSCRIBE"}, function(_, err, res)
+    cmd_called = true
+    assert_nil(err)
+  end)
+
+  stream:append_r{n = 3, "unsubscribe", nil, 0}:execute()
+
+  assert_true (called)
+  assert_equal("unsubscribe", typ)
+  assert_equal(nil,           ch)
+  assert_equal(0,             msg)
+
+  assert_true (cmd_called)
+end)
+
+it('should handle unsubscribe without channel and with subscribers', function()
+
+  local typ, ch, msg, called, cmd_called
+  stream:on_command(PASS)
+  :on_message(function(self, mtyp, channel, message)
+    called = true
+    typ, ch, msg = mtyp, channel, message
+  end)
+
+  stream:command({"UNSUBSCRIBE"}, function(_, err, res)
+    cmd_called = true
+    assert_nil(err)
+    assert_table(res)
+    assert_equal(0, res[3])
+  end)
+
+  stream:append_r{"unsubscribe", "hello", 1}:execute()
+
+  assert_true (called)
+  assert_equal("unsubscribe", typ)
+  assert_equal("hello",       ch)
+  assert_equal(1,             msg)
+
+  assert_nil  (cmd_called)
+
+  called = nil
+
+  stream:append_r{"unsubscribe", "world", 0}:execute()
+
+  assert_true (called)
+  assert_equal("unsubscribe", typ)
+  assert_equal("world",       ch)
+  assert_equal(0,             msg)
+
+  assert_true (cmd_called)
+end)
+
+it('should handle ping in PubSub mode #1', function()
+  local typ, ch, msg, called
+  stream:on_command(PASS)
+  :on_message(function(self, mtyp, channel, message)
+    called = true
+    typ, ch, msg = mtyp, channel, message
+  end)
+
+  local c1, c2
+  stream:command({"SUBSCRIBE", "a", "b", "c"}, function(_, err, res)
+    c1 = true
+    assert_nil(err)
+    assert_table(res)
+    assert_equal(res[1], 'subscribe')
+    assert_equal(res[2], 'a')
+  end)
+
+  stream:command({"PING", "hello"}, function(_, err, res)
+    c2 = true
+    assert_nil(err)
+    assert_table(res)
+    assert_equal(res[1], 'pong')
+    assert_equal(res[2], 'hello')
+  end)
+
+  stream:append_r{'subscribe', 'a', 1}:execute()
+
+  assert_true(called)
+  assert_equal("subscribe", typ)
+  assert_equal("a",         ch)
+  assert_equal(1,           msg)
+  assert_true(c1)
+  assert_nil(c2)
+
+  called, c1 = nil
+
+  stream:append_r{'subscribe', 'b', 2}:execute()
+
+  assert_true(called)
+  assert_equal("subscribe", typ)
+  assert_equal("b",         ch)
+  assert_equal(2,           msg)
+  assert_nil(c1)
+  assert_nil(c2)
+
+  called = nil
+
+  stream:append_r{'subscribe', 'c', 3}:execute()
+
+  assert_true(called)
+  assert_equal("subscribe", typ)
+  assert_equal("c",         ch)
+  assert_equal(3,           msg)
+  assert_nil(c1)
+  assert_nil(c2)
+
+  called = nil
+
+  stream:append_r{'pong', 'hello'}:execute()
+  assert_nil(called)
+  assert_nil(c1)
+  assert_true(c2)
+end)
+
+it('should handle ping in PubSub mode #2', function()
+  local typ, ch, msg, called
+  stream:on_command(PASS)
+  :on_message(function(self, mtyp, channel, message)
+    called = true
+    typ, ch, msg = mtyp, channel, message
+  end)
+
+  local c1, c2
+  stream:command({"SUBSCRIBE", "a", "b", "c"}, function(_, err, res)
+    c1 = true
+    assert_nil(err)
+    assert_table(res)
+    assert_equal(res[1], 'subscribe')
+    assert_equal(res[2], 'a')
+  end)
+
+  stream:command({"PING", "hello"}, function(_, err, res)
+    c2 = true
+    assert_nil(err)
+    assert_table(res)
+    assert_equal(res[1], 'pong')
+    assert_equal(res[2], 'hello')
+  end)
+
+  stream:append_r{'subscribe', 'a', 1}:execute()
+
+  assert_true(called)
+  assert_equal("subscribe", typ)
+  assert_equal("a",         ch)
+  assert_equal(1,           msg)
+  assert_true(c1)
+  assert_nil(c2)
+
+  called, c1 = nil
+
+  stream:append_r{'subscribe', 'b', 2}:execute()
+
+  assert_true(called)
+  assert_equal("subscribe", typ)
+  assert_equal("b",         ch)
+  assert_equal(2,           msg)
+  assert_nil(c1)
+  assert_nil(c2)
+
+  called = nil
+
+  stream:append_r{'subscribe', 'c', 3}:execute()
+
+  assert_true(called)
+  assert_equal("subscribe", typ)
+  assert_equal("c",         ch)
+  assert_equal(3,           msg)
+  assert_nil(c1)
+  assert_nil(c2)
+
+  called = nil
+
+  stream:append_r{'message', 'a', 'hello'}:execute()
+
+  assert_true(called)
+  assert_equal("message", typ)
+  assert_equal("a",       ch)
+  assert_equal('hello',   msg)
+  assert_nil(c1)
+  assert_nil(c2)
+
+  called = nil
+
+  stream:append_r{'pong', 'hello'}:execute()
+  assert_nil(called)
+  assert_nil(c1)
+  assert_true(c2)
 end)
 
 end
@@ -1500,6 +1654,5 @@ it("should remove task after pass", function()
   assert_true(called2)
 end)
 end
-
 
 RUN()

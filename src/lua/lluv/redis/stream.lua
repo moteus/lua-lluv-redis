@@ -76,7 +76,7 @@ local INT  = ':'
 local BULK = '$'
 local ARR  = '*'
 
-local CB, STATE, DATA, CMD, DECODER = 1, 2, 3, 4, 5
+local CB, STATE, DATA, CMD, DECODER, CHANNELS = 1, 2, 3, 4, 5, 6
 local I, N = 3, 1
 
 local SUBSCRIBE_COMMANDS = {
@@ -331,7 +331,7 @@ function RedisCmdStream:_handle_async_message(payload)
   end
 
   if SUBSCRIBE_MESSAGES[msg] then
-    if self._on_message then self._on_message(self._self, unpack(payload)) end
+    if self._on_message then self._on_message(self._self, unpack(payload, 1, payload.n or #payload)) end
   else
     self:halt(RedisError_EPROTO('unexpected message in pubsub mode: ' .. msg))
   end
@@ -385,22 +385,13 @@ function RedisCmdStream:execute()
         --   {'unsubscribe' 'a', 0}
         --   {'unsubscribe' 'b', 0}
         --   'some_a_value'
-        -- And I do not see any easy way how to distinct asyn message from real
-        -- response. E.g. `redis-cli` just returns `{'unsubscribe' 'b', 0}` as
-        -- result for `get a` command. And `some_a_value` as result for any next
-        -- command. And so on. 
-        -- So I strongly recomended do not use `unsubscribe` with multiple channels
-        -- or do not use same connection for pubsub and for regular data transmition
-        -- 
-        -- Because of that all 8.x can lead to unexpected/not correct results
 
         local payload = task[DATA]
 
-        if (task ~= self._sub) or (self._sub == nil) then
+        if task ~= self._sub then
           -- we handle real command response.
-          -- we handle first message as result. This is correct only if use subscribe/unsubscribe
-          -- with only one channel. but if you send `subscribe a b` and then `subscribe c`
-          -- then you get `[subscribe b 2]` as result for your second subscribe.
+          -- For subscribe command we can wait first response
+          -- For unsubscribe command we have to wait all responses
 
           local msg = payload[1]
 
@@ -412,13 +403,62 @@ function RedisCmdStream:execute()
           end
 
           if msg == string.lower(task[CMD]) then
-            self._queue:pop()
-            cb(self._self, decoder(nil, task[DATA]))
+            if msg == 'unsubscribe' or msg == 'punsubscribe' then
+              -- we have to wait all responses because we can be in 
+              -- not PubSub mode so we can not handle async messages
+              -- e.g. we have this call sequence
+              --  * subscribe A
+              --  * unsubscribe A B C
+              -- In this case we switch to regular mode after server
+              -- handle `unsubscribe A`, but after that it also send 2 more
+              -- async messages.
+              -- All this will work only if Redis guarantee that all
+              -- unsubscribe messages well be send atomically. E.g.
+              --  * subscribe A
+              --  * unsubscribe A B C
+              --  * get a
+              -- Response for `get a` will be send only after all `unsubscribe`
+              -- messages.
+
+              if task[CHANNELS] then
+                -- if we invoke command with channel list then Redis
+                -- send one response for each channel name. If channel duplicates
+                -- then Redis also duplicates responses
+                task[CHANNELS] = task[CHANNELS] - 1
+                if task[CHANNELS] == 0 then
+                  self._queue:pop()
+                  cb(self._self, decoder(nil, task[DATA]))
+                else
+                  task[DATA], task[STATE] = nil
+                end
+              else
+                -- we send just unsubscribe without args to unsubscribe from all channels
+                -- in this case Redis response with one message per active subscription.
+                -- Last response has channels=0
+                -- If there no subscriptions then Redis responses with single message
+                -- where channel is NULL and channels=0
+                local channels = payload[3]
+                if channels == 0 then
+                  self._queue:pop()
+                  cb(self._self, decoder(nil, task[DATA]))
+                else
+                  task[DATA], task[STATE] = nil
+                end
+              end
+
+            else
+              -- we can wait only first response because after subscribe
+              -- we switch to PubSub mode and can easily handle any async
+              -- messages
+
+              self._queue:pop()
+              cb(self._self, decoder(nil, task[DATA]))
+            end
           else
             -- This is not response to command. so we have to `restart` task again
             task[DATA], task[STATE] = nil
           end
-        else 
+        else
           -- task is fake task so we have reset it by hand
           task[DATA], task[STATE] = nil
         end
@@ -476,9 +516,16 @@ end
 
 function RedisCmdStream:command(cmd, cb, decoder)
   assert(is_callable(cb))
+  local count
+
+  if cmd[1] and SUBSCRIBE_COMMANDS[ cmd[1] ] then
+    count = #cmd - 1
+    if count == 0 then count = nil end
+  end
+
   local cmd, cmd_name = self:encode_command(cmd)
   if self._on_command(self._self, cmd) then
-    self._queue:push{cb, nil, nil, cmd_name, decoder or pass}
+    self._queue:push{cb, nil, nil, cmd_name, decoder or pass, count}
   end
   return self._self
 end
