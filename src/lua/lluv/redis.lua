@@ -87,9 +87,6 @@ function Connection:__init(opt)
   self._ready            = false
   self._ee               = EventEmitter.new{self=self}
 
-  self._on_message       = nil
-  self._on_error         = nil
-
   local function on_write_error(cli, err)
     if err then self._stream:halt(err) end
   end
@@ -111,12 +108,10 @@ function Connection:__init(opt)
     self:close(err)
     if err ~= EOF then
       self._ee:emit('error', err)
-      ocall(self._on_error, self, err)
     end
   end)
   :on_message(function(_, ...)
     self._ee:emit(...)
-    ocall(self._on_message, self, ...)
   end)
 
   return self
@@ -257,16 +252,6 @@ end
 
 function Connection:pipeline()
   return self._commander:pipeline()
-end
-
-function Connection:on_error(handler)
-  self._on_error = handler
-  return self
-end
-
-function Connection:on_message(handler)
-  self._on_message = handler
-  return self
 end
 
 function Connection:__tostring()

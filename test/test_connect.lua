@@ -254,7 +254,7 @@ local function test_5()
     assert(3 == c, c) c = c + 1
   end)
 
-  cli:on_error(function(s, err)
+  cli:on('error', function(s, event, err)
     assert(s == cli)
     assert(err)
     assert(err:name() == 'EPROTO', tostring(err))
