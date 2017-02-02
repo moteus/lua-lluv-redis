@@ -15,7 +15,7 @@ local Stream = require "lluv.redis.stream"
 
 --- Notes
 -- Request is array of strings.
--- You can not pass number (:123), NULL(*-1), basic string (+HELLO) or any other type.
+-- You can not pass number (:123), NULL(*-1 or $-1), basic string (+HELLO) or any other type.
 
 local function dummy()end
 

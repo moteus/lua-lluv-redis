@@ -12,8 +12,6 @@
 
 local ut = require "lluv.utils"
 
-local NULL = {}
-
 local unpack = unpack or table.unpack
 
 local RedisError = ut.class() do
@@ -549,7 +547,6 @@ end
 
 return {
   new          = RedisCmdStream.new;
-  NULL         = NULL;
   error        = RedisError.new;
   IsError      = IsRedisError;
 }
