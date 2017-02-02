@@ -280,6 +280,9 @@ end
 
 RedisCommander.commands(function(name)
   name = name:lower()
+
+  assert(nil == Connection[name], 'ALERT! name already taken by connection API: ' .. name)
+
   Connection[name] = function(self, ...)
     if not self._cnn then
       local cb = select('#', ...) > 0 and is_callable(select(-1, ...))
