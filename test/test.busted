@@ -239,6 +239,35 @@ describe('lluv.Redis test', function()
       end)
     end)
 
+    it('should hit pmessage events', function(done) async()
+      client = redis:clone()
+
+      local c1, c2
+
+      client:on('pmessage', function(self, event, pattern, channel, data)
+        c1 = true
+        assert.equal('a*',    pattern)
+        assert.equal('a123',  channel)
+        assert.equal('hello', data   )
+      end)
+
+      client:on('psubscribe', function(self, event, pattern)
+        c2 = true
+        assert.equal('a*', pattern)
+      end)
+
+      client:open(function(_, err) assert_nil(err)
+        client:psubscribe('a*', function(_, err) assert_nil(err)
+          redis:publish('a123', 'hello',function(_, err) assert_nil(err) end)
+          uv.timer():start(500, function()
+            assert.truthy(c1)
+            assert.truthy(c2)
+            done()
+          end)
+        end)
+      end)
+    end)
+
     after_each(function(done) async()
       if client then
         client:close(function() done() end)
