@@ -364,6 +364,87 @@ describe('lluv.Redis test', function()
 
   end)
 
+  describe('Monitor test', function()
+    local client
+
+    it('should emit message event', function(done) async()
+      client = redis:clone():open(function(_, err) assert_nil(err)
+        redis:on('monitor', function(self, event, data)
+          assert.match('PING', data)
+          done()
+        end)
+        redis:monitor(function(_, err, res) assert_nil(err)
+          assert.equal('OK', res)
+          client:ping()
+        end)
+      end)
+    end)
+
+    it('should handle commands in monitoring mode #1', function(done) async()
+      local c1, c2
+      redis:on('monitor', function(self, event, data)
+        c1 = true
+        assert.match('PING', data)
+        if c2 then done() end
+      end)
+
+      redis:monitor(function(_, err, res) assert_nil(err)
+        assert.equal('OK', res)
+        redis:ping(function(_, err, res) assert_nil(err)
+          c2 = true
+          assert.equal('PONG', res)
+          if c1 then done() end
+        end)
+      end)
+
+      -- timeout
+      uv.timer(500, function()
+        assert.truthy(c1)
+        assert.truthy(c2)
+      end):unref()
+
+    end)
+
+    it('should handle commands in monitoring mode #2', function(done) async()
+      local c1, c2, c3
+      redis:on('monitor', function(self, event, data)
+        c1 = true
+        assert.match('PING', data)
+        assert.truthy(c3)
+        if c2 then done() end
+      end)
+
+      redis:monitor(function(_, err, res) assert_nil(err)
+        c3 = true
+        assert.equal('OK', res)
+      end)
+
+      redis:ping(function(_, err, res) assert_nil(err)
+        c2 = true
+        assert.equal('PONG', res)
+        assert.truthy(c3)
+        if c1 then done() end
+      end)
+
+      -- timeout
+      uv.timer(500, function()
+        assert.truthy(c1)
+        assert.truthy(c2)
+      end):unref()
+
+    end)
+
+    after_each(function(done) async()
+      if client then
+        client:close(function() done() end)
+        client = nil
+      else
+        done(ctx)
+      end
+    end)
+  end)
+
+
   before_each(function(done) async()
     redis = Redis.Connection.new{server = URL}
     redis:open(function(self, err) assert.is_nil(err)

@@ -11,6 +11,9 @@ local RUN = utils.RUN
 local IT, CMD, PASS = utils.IT, utils.CMD, utils.PASS
 local nreturn, is_equal = utils.nreturn, utils.is_equal
 local C = function(t) return table.concat(t, '\r\n') .. '\r\n' end
+
+local R do
+
 local BULK = function(s) return string.format("$%d\r\n%s", #s, s) end
 local NUM  = function(s) return string.format(":%d", s) end
 
@@ -29,11 +32,9 @@ local function build(t)
   return '*' .. tostring(#r) .. '\r\n' .. table.concat(r, '\r\n') .. '\r\n'
 end
 
-local function sub_resp(m, c, n)
-  return build{n=3, m, c, n}
-end
+R = build
 
-local R = build
+end
 
 local ENABLE = true
 
@@ -1454,6 +1455,70 @@ it('should handle ping in PubSub mode #2', function()
   stream:append_r{'pong', 'hello'}:execute()
   assert_nil(called)
   assert_nil(c1)
+  assert_true(c2)
+end)
+
+it('should support MONITOR command', function()
+  local typ, ch, msg, called
+  stream:on_command(PASS)
+  :on_message(function(self, mtyp, channel, message)
+    called = true
+    typ, ch, msg = mtyp, channel, message
+  end)
+
+  local c1
+  stream:command({"MONITOR"}, function(_, err, res)
+    c1 = true
+    assert_nil(err)
+    assert_equal('OK', res)
+  end)
+
+  stream:append('+OK\r\n'):execute()
+
+  assert_nil(called)
+  assert_true(c1)
+
+  stream:append('+1486105885.438751 [0 127.0.0.1:23122] "ping" "hello"\r\n'):execute()
+  assert_true(called)
+  assert_equal('monitor', typ)
+  assert_equal('1486105885.438751 [0 127.0.0.1:23122] "ping" "hello"', ch)
+end)
+
+it('should allow pass commands in monitoring mode', function()
+  local typ, ch, msg, called
+  stream:on_command(PASS)
+  :on_message(function(self, mtyp, channel, message)
+    called = true
+    typ, ch, msg = mtyp, channel, message
+  end)
+
+  local c1
+  stream:command({"MONITOR"}, function(_, err, res)
+    c1 = true
+    assert_nil(err)
+    assert_equal('OK', res)
+  end)
+
+  stream:append('+OK\r\n'):execute()
+
+  local c2
+  stream:command({"PING"}, function(_, err, res)
+    c2 = true
+    assert_nil(err)
+    assert_equal('PONG', res)
+  end)
+
+  assert_nil(called)
+  assert_true(c1)
+
+  stream:append('+1486105885.438751 [0 127.0.0.1:23122] "ping" "hello"\r\n'):execute()
+  assert_true(called)
+  assert_equal('monitor', typ)
+  assert_equal('1486105885.438751 [0 127.0.0.1:23122] "ping" "hello"', ch)
+
+  assert_nil(c2)
+
+  stream:append('+PONG\r\n'):execute()
   assert_true(c2)
 end)
 

@@ -14,6 +14,13 @@ local ut = require "lluv.utils"
 
 local unpack = unpack or table.unpack
 
+local monitoring_pattern = '^%d+%.%d+ %[%d+ (%S-)%] "(%S-)"%s*(.*)$'
+
+local function is_monitor_message(msg)
+  local address, cmd = string.match(msg, monitoring_pattern)
+  return address and (#address > 0) and (#cmd > 0)
+end
+
 local RedisError = ut.class() do
 
 function RedisError:__init(no, name, msg, ext)
@@ -177,6 +184,7 @@ function RedisCmdStream:__init(cb_self)
   self._txn    = ut.Queue.new()
   self._self   = cb_self or self
   self._sub    = nil -- fake task to proceed `message` replays
+  self._monitoring = nil -- this indicate that we can receive async monitor messages
 
   self._on_halt    = nil
   self._on_message = nil
@@ -249,11 +257,22 @@ end
 function RedisCmdStream:_next_data_task()
   local queue = self._queue
 
-  while true do
+  while true do repeat
     local task = queue:peek() or self._sub
 
     if not task then
       if not self._buffer:empty() then
+
+        -- this can be async monitor message
+        if self._monitoring then
+          local line = self._buffer:read_line()
+          local typ, data = decode_line(line)
+          if typ == OK and is_monitor_message(data) then
+            if self._on_message then self._on_message(self._self, 'monitor', data) end
+            break -- continue
+          end
+        end
+
         return nil, RedisError_EPROTO(self._buffer:read_all())
       end
       return
@@ -267,18 +286,24 @@ function RedisCmdStream:_next_data_task()
     local cb, decoder = task[CB], task[DECODER]
     local typ, data, add = decode_line(line)
     if typ == OK then
-      queue:pop()
-      if data == 'QUEUED' then
-        self._txn:push(task)
+      if self._monitoring and is_monitor_message(data) then
+        if self._on_message then self._on_message(self._self, 'monitor', data) end
       else
-        if task[CMD] == 'DISCARD' then
-          while true do
-            local task = self._txn:pop()
-            if not task then break end
-            task[CB](self._self, task[DECODER]('DISCARD'))
+        queue:pop()
+        if data == 'QUEUED' then
+          self._txn:push(task)
+        else
+          if task[CMD] == 'DISCARD' then
+            while true do
+              local task = self._txn:pop()
+              if not task then break end
+              task[CB](self._self, task[DECODER]('DISCARD'))
+            end
+          elseif task[CMD] == 'MONITOR' then
+            self._monitoring = true
           end
+          cb(self._self, decoder(nil, data))
         end
-        cb(self._self, decoder(nil, data))
       end
     elseif typ == ERR then
       queue:pop()
@@ -314,7 +339,7 @@ function RedisCmdStream:_next_data_task()
     else
       return nil, RedisError_EPROTO(line)
     end
-  end
+  until true end
 end
 
 function RedisCmdStream:_handle_async_message(payload)
@@ -355,36 +380,13 @@ function RedisCmdStream:execute()
         return
       end
 
+      -- Redis supports some commands in Async mode.
+      -- E.g. `PING`. But in this case result send also as
+      -- array like `{'pong', ''}`. So we should checks also 
+      -- first element in array
       if SUBSCRIBE_COMMANDS[ task[CMD] ]
         or (self._sub and task[DATA][1] and SUBSCRIBE_MESSAGES[ task[DATA][1] ])
       then
-        -- There posssible several states
-        -- - 1 We in RR mode and send [p]subscribe with single channels
-        -- - 2 We in RR mode and send [p]subscribe with multiple channels
-        -- - 3 We in RR mode and send [p]unsubscribe with single channels
-        -- - 4 We in RR mode and send [p]unsubscribe with multiple channels
-        -- - 5 We in PS mode and send [p]subscribe with single channels
-        -- - 6 We in PS mode and send [p]subscribe with multiple channels
-        -- - 7 We in PS mode and send [p]unsubscribe with single channels
-        -- - 7.1 We unsubscribe from not last channel and we still in PS mode
-        -- - 7.2 We unsubscribe from last channel and switch to RR mode
-        -- - 8 We in PS mode and send [p]unsubscribe with multiple channels
-        -- - 8.1 We unsubscribe from not last channels and we still in PS mode
-        -- - 8.2 We unsubscribe from not last channel using not last one in list
-        -- -     e.g. we have subscriptions to `a`, `b` and `c` and send command
-        -- -     `unsubscribe a b c d e`.
-        -- - 8.3 We unsubscribe from not last channel using last one in list
-        -- -     e.g. we have subscriptions to `a`, `b` and `c` and send command
-        -- -     `unsubscribe a b d e c`.
-        -- 
-        -- * PP - PubSub RR - RequesResponse
-        -- 
-        -- Main problem with unsubscribe command. It sends async messages
-        -- even if server not in pubsub mode. E.g. if we call `unsubscribe a b`
-        -- and then `get a`. Server send response
-        --   {'unsubscribe' 'a', 0}
-        --   {'unsubscribe' 'b', 0}
-        --   'some_a_value'
 
         local payload = task[DATA]
 
