@@ -3,10 +3,10 @@ local redis = require "lluv.redis"
 
 local cli = redis.Connection.new()
 cli:open(function()
-  cli:on_message(function(...)
+  cli:on('message', function(...)
     print("NEW MESSAGE:", ...)
   end)
-  :subscribe("hello")
+  cli:subscribe("hello")
 end)
 
 local cli = redis.Connection.new()

@@ -34,7 +34,7 @@ uv.tcp():connect("127.0.0.1", 6379, function(cli, err)
   end)
 
   stream:command("*3\r\n$3\r\nSET\r\n$1\r\na\r\n+1", function(...)
-    print("SSSS:", ...)
+    print("SET:", ...)
   end)
 
   stream:command("QUIT", function(...)
