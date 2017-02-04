@@ -266,6 +266,7 @@ function RedisCmdStream:_next_data_task()
         -- this can be async monitor message
         if self._monitoring then
           local line = self._buffer:read_line()
+          if not line then return end
           local typ, data = decode_line(line)
           if typ == OK and is_monitor_message(data) then
             if self._on_message then self._on_message(self._self, 'monitor', data) end

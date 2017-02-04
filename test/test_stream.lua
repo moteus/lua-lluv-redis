@@ -1522,9 +1522,36 @@ it('should allow pass commands in monitoring mode', function()
   assert_true(c2)
 end)
 
-end
+it('should wait full monitor message', function()
+  local typ, ch, msg, called
+  stream:on_command(PASS)
+  :on_message(function(self, mtyp, channel, message)
+    called = true
+    typ, ch, msg = mtyp, channel, message
+  end)
 
-local ENABLE = true
+  local c1
+  stream:command({"MONITOR"}, function(_, err, res)
+    c1 = true
+    assert_nil(err)
+    assert_equal('OK', res)
+  end)
+
+  stream:append('+OK\r\n'):execute()
+
+  assert_nil(called)
+  assert_true(c1)
+
+  stream:append('+1486105885.438751 '):execute()
+  assert_nil(called)
+
+  stream:append('[0 127.0.0.1:23122] "ping" "hello"\r\n'):execute()
+  assert_true(called)
+  assert_equal('monitor', typ)
+  assert_equal('1486105885.438751 [0 127.0.0.1:23122] "ping" "hello"', ch)
+end)
+
+end
 
 local _ENV = TEST_CASE'redis stream callback' if ENABLE then
 
