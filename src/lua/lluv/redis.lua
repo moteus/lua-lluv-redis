@@ -88,7 +88,12 @@ function Connection:__init(opt)
   self._ee               = EventEmitter.new{self=self}
 
   local function on_write_error(cli, err)
-    if err then self._stream:halt(err) end
+    if err then
+      if err ~= EOF then
+        self._ee:emit('error', err)
+      end
+      self:close(err)
+    end
   end
 
   self._on_write_handler = on_write_error
@@ -247,14 +252,12 @@ function Connection:close(err, cb)
       self._delay_q:reset()
       self._cnn, self._open_q, self._close_q = nil
 
-      -- we have to call it before open_q because
-      -- we reuse same stream object so if callback
-      -- calls `open` and then `command` then we get
-      -- new callback in stream which we should calls
-      -- only after next `open` done.
-      self._stream:reset(err or EOF)
+      local command_q = self._stream:defer_reset()
 
       call_q(open_q, self, err or EOF)
+      for _, cb in ipairs(command_q) do
+        cb(self, err or EOF)
+      end
       call_q(close_q, self, err)
 
       self._ee:emit('close', err)

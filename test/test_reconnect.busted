@@ -28,6 +28,8 @@ describe('lluv.Redis reconnect test', function()
     redis = Redis.Connection.new{port = 6380}
 
     redis:open(function(_, err) assert.not_nil(err)
+      assert.same({}, state)
+
       state['open - 1 - called'] = true
 
       -- this allows reconnect
@@ -60,6 +62,9 @@ describe('lluv.Redis reconnect test', function()
       end)
 
       redis:ping('ping - 4', function(_, err, res) assert_nil(err)
+        assert.same({
+          ['open - 3 - called'] = true;
+        }, state)
         state['ping - 4 - called'] = true
         assert.equal('ping - 4', res)
       end)
@@ -67,14 +72,26 @@ describe('lluv.Redis reconnect test', function()
 
     -- this is just second callback to failed connection
     redis:open(function(_, err) assert.not_nil(err)
+      assert.same({
+        ['open - 1 - called'] = true;
+      }, state)
       state['open - 2 - called'] = true
     end)
 
     redis:ping('ping - 1', function(_, err) assert.not_nil(err)
+      assert.same({
+        ['open - 1 - called'] = true;
+        ['open - 2 - called'] = true;
+      }, state)
       state['ping - 1 - called'] = true
     end)
 
     redis:ping('ping - 2', function(_, err) assert.not_nil(err)
+      assert.same({
+        ['open - 1 - called'] = true;
+        ['open - 2 - called'] = true;
+        ['ping - 1 - called'] = true;
+      }, state)
       state['ping - 2 - called'] = true
     end)
 
@@ -86,15 +103,23 @@ describe('lluv.Redis reconnect test', function()
     redis = Redis.Connection.new{port = 6380}
 
     redis:open(function(_, err) assert.not_nil(err)
+      assert.same({}, state)
       state['open - 1 - called'] = true
     end)
 
     -- this is just second callback to failed connection
     redis:open(function(_, err) assert.not_nil(err)
+      assert.same({
+        ['open - 1 - called'] = true
+      }, state)
       state['open - 2 - called'] = true
     end)
 
     redis:ping('ping - 1', function(_, err) assert.not_nil(err)
+      assert.same({
+        ['open - 1 - called'] = true;
+        ['open - 2 - called'] = true;
+      }, state)
       state['ping - 1 - called'] = true
 
       -- this allows reconnect
@@ -127,6 +152,9 @@ describe('lluv.Redis reconnect test', function()
       end)
 
       redis:ping('ping - 4', function(_, err, res) assert_nil(err)
+        assert.same({
+          ['open - 3 - called'] = true;
+        }, state)
         state['ping - 4 - called'] = true
         assert.equal('ping - 4', res)
       end)
@@ -134,6 +162,11 @@ describe('lluv.Redis reconnect test', function()
     end)
 
     redis:ping('ping - 2', function(_, err) assert.not_nil(err)
+      assert.same({
+        ['open - 1 - called'] = true;
+        ['open - 2 - called'] = true;
+        ['ping - 1 - called'] = true;
+      }, state)
       state['ping - 2 - called'] = true
     end)
 
