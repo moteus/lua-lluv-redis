@@ -81,8 +81,8 @@ function Connection:__init(opt)
 
   self._stream           = RedisStream.new(self)
   self._commander        = RedisCommander.new(self._stream)
-  self._open_q           = ut.Queue.new()
-  self._close_q          = ut.Queue.new()
+  self._open_q           = nil
+  self._close_q          = nil
   self._delay_q          = ut.Queue.new()
   self._ready            = false
   self._ee               = EventEmitter.new{self=self}
@@ -150,10 +150,13 @@ function Connection:open(cb)
     return self
   end
 
-  if cb then self._open_q:push(cb) end
-
   -- Only first call 
-  if self._cnn then return self end
+  if self._cnn then
+    if cb then
+      self._open_q:push(cb)
+    end
+    return self
+  end
 
   local cmd -- Init command
 
@@ -179,7 +182,14 @@ function Connection:open(cb)
   end)
 
   if not ok then return nil, err end
-  self._cnn = ok
+
+  self._cnn     = ok
+  self._open_q  = ut.Queue.new()
+  self._close_q = ut.Queue.new()
+
+  if cb then
+    self._open_q:push(cb)
+  end
 
   if self._db or self._pass then
     local called = false
@@ -229,12 +239,23 @@ function Connection:close(err, cb)
   if not (self._cnn:closed() or self._cnn:closing()) then
     local err = err
     self._cnn:close(function()
-      self._cnn = nil
 
-      call_q(self._open_q, self, err or EOF)
-      self._stream:reset(err or EOF)
-      call_q(self._close_q, self, err)
+      -- we can not use same queues because callback can
+      -- call `open` again and put new callback to `next` connection
+      local open_q, close_q  = self._open_q, self._close_q
+
       self._delay_q:reset()
+      self._cnn, self._open_q, self._close_q = nil
+
+      -- we have to call it before open_q because
+      -- we reuse same stream object so if callback
+      -- calls `open` and then `command` then we get
+      -- new callback in stream which we should calls
+      -- only after next `open` done.
+      self._stream:reset(err or EOF)
+
+      call_q(open_q, self, err or EOF)
+      call_q(close_q, self, err)
 
       self._ee:emit('close', err)
     end)

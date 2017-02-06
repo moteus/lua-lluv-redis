@@ -562,19 +562,28 @@ function RedisCmdStream:halt(err)
 end
 
 function RedisCmdStream:reset(err)
-  while true do
-    local task = self._queue:pop()
-    if not task then break end
-    task[CB](self._self, err)
-  end
+  local queue, txn = self._queue, self._txn
 
-  while true do
-    local task = self._txn:pop()
-    if not task then break end
-    task[CB](self._self, err)
-  end
-
+  -- we have to use copy of queues because
+  -- callback can call open and new command
+  -- and we have to call this new callbacks
+  -- only after new open done.
+  self._queue  = ut.Queue.new()
+  self._txn    = ut.Queue.new()
   self._buffer:reset()
+
+  while true do
+    local task = queue:pop()
+    if not task then break end
+    task[CB](self._self, err)
+  end
+
+  while true do
+    local task = txn:pop()
+    if not task then break end
+    task[CB](self._self, err)
+  end
+
   return
 end
 

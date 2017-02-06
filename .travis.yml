@@ -65,7 +65,7 @@ script:
   - lua      test_redis_pub_sub.lua
   - lua      test_connect.lua
   - busted_bootstrap --verbose --coverage test.busted
-
+  - busted_bootstrap --verbose --coverage test_reconnect.busted
 
 after_success:
   - luacov-coveralls -v

@@ -1,0 +1,179 @@
+io.stdout:setvbuf'no';io.stderr:setvbuf'no';
+package.path = "..\\src\\lua\\?.lua;" .. package.path
+
+local prequire = function(m)
+  local ok, m = pcall(require, m)
+  if ok then return m end
+end
+
+local uv    = require "lluv"
+local loop  = require "lluv.busted.loop"
+local Redis = require "lluv.redis"
+local stp   = prequire"StackTracePlus"
+
+local URL = "redis://127.0.0.1/12"
+
+setloop(loop)
+
+loop.set_timeout(5)
+
+loop.set_traceback(stp and stp.stacktrace or debug.traceback)
+
+describe('lluv.Redis reconnect test', function()
+  local redis, host, port
+
+  it('should open from open callback', function(done) async()
+    local state = {}
+    -- use fake address to fail connect
+    redis = Redis.Connection.new{port = 6380}
+
+    redis:open(function(_, err) assert.not_nil(err)
+      state['open - 1 - called'] = true
+
+      -- this allows reconnect
+      redis._host = host
+      redis._port = port
+
+      redis:open(function(_, err) assert_nil(err)
+        assert.same({
+          ['open - 1 - called'] = true;
+          ['open - 2 - called'] = true;
+          ['ping - 1 - called'] = true;
+          ['ping - 2 - called'] = true;
+        }, state)
+        state = {}
+
+        state['open - 3 - called'] = true
+
+        redis:ping('ping - 3', function(_, err, res) assert_nil(err)
+          assert.equal('ping - 3', res)
+          state['ping - 3 - called'] = true
+
+          assert.same({
+            ['open - 3 - called'] = true;
+            ['ping - 3 - called'] = true;
+            ['ping - 4 - called'] = true;
+          }, state)
+
+          done()
+        end)
+      end)
+
+      redis:ping('ping - 4', function(_, err, res) assert_nil(err)
+        state['ping - 4 - called'] = true
+        assert.equal('ping - 4', res)
+      end)
+    end)
+
+    -- this is just second callback to failed connection
+    redis:open(function(_, err) assert.not_nil(err)
+      state['open - 2 - called'] = true
+    end)
+
+    redis:ping('ping - 1', function(_, err) assert.not_nil(err)
+      state['ping - 1 - called'] = true
+    end)
+
+    redis:ping('ping - 2', function(_, err) assert.not_nil(err)
+      state['ping - 2 - called'] = true
+    end)
+
+  end)
+
+  it('should open from command callback', function(done) async()
+    local state = {}
+    -- use fake address to fail connect
+    redis = Redis.Connection.new{port = 6380}
+
+    redis:open(function(_, err) assert.not_nil(err)
+      state['open - 1 - called'] = true
+    end)
+
+    -- this is just second callback to failed connection
+    redis:open(function(_, err) assert.not_nil(err)
+      state['open - 2 - called'] = true
+    end)
+
+    redis:ping('ping - 1', function(_, err) assert.not_nil(err)
+      state['ping - 1 - called'] = true
+
+      -- this allows reconnect
+      redis._host = host
+      redis._port = port
+
+      redis:open(function(_, err) assert_nil(err)
+        assert.same({
+          ['open - 1 - called'] = true;
+          ['open - 2 - called'] = true;
+          ['ping - 1 - called'] = true;
+          ['ping - 2 - called'] = true;
+        }, state)
+        state = {}
+
+        state['open - 3 - called'] = true
+
+        redis:ping('ping - 3', function(_, err, res) assert_nil(err)
+          assert.equal('ping - 3', res)
+          state['ping - 3 - called'] = true
+
+          assert.same({
+            ['open - 3 - called'] = true;
+            ['ping - 3 - called'] = true;
+            ['ping - 4 - called'] = true;
+          }, state)
+
+          done()
+        end)
+      end)
+
+      redis:ping('ping - 4', function(_, err, res) assert_nil(err)
+        state['ping - 4 - called'] = true
+        assert.equal('ping - 4', res)
+      end)
+
+    end)
+
+    redis:ping('ping - 2', function(_, err) assert.not_nil(err)
+      state['ping - 2 - called'] = true
+    end)
+
+  end)
+
+  before_each(function(done) async()
+    redis = Redis.Connection.new{server = url}
+    host, port = redis._host, redis._port
+    redis:close()
+    done()
+  end)
+
+  after_each(function(done) async()
+    if redis then
+      redis:close(function()
+        loop.verify_after()
+        done(ctx)
+      end)
+      redis = nil
+    else
+      done(ctx)
+    end
+  end)
+
+end)
+
+local RedisStream = require "lluv.redis.stream"
+
+assert:add_formatter(function(t)
+  if type(t) ~= 'table' then return end
+
+  if getmetatable(t) == Redis.Connection then
+    return tostring(t)
+  end
+
+  if RedisStream.IsError(t) then
+    return tostring(t)
+  end
+
+end)
+
+assert_nil = assert.is_nil
+
