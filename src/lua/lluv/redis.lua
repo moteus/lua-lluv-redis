@@ -268,10 +268,7 @@ function Connection:close(err, cb)
 end
 
 function Connection:closed()
-  if self._cnn then
-    return self._cnn:closed() or self._cnn:closing()
-  end
-  return true
+  return not self._cnn
 end
 
 function Connection:pipeline()
