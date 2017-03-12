@@ -59,7 +59,51 @@ local function is_callable(f)
 end
 
 -------------------------------------------------------------------
+-- create monitoring timer to be able to reconnect redis connection
+-- close this timer before close connection object
+local function AutoReconnect(cnn, interval, on_connect, on_disconnect)
+
+  local timer = uv.timer():start(0, interval, function(self)
+    self:stop()
+    cnn:open()
+  end):stop()
+
+  local connected = true
+
+  cnn:on('close', function(self, event, ...)
+    local flag = connected
+
+    connected = false
+
+    if flag then on_disconnect(self, ...) end
+
+    if timer:closed() or timer:closing() then
+      return
+    end
+
+    timer:again()
+  end)
+
+  cnn:on('ready', function(self, event, ...)
+    connected = true
+    on_connect(self, ...)
+  end)
+
+  return timer
+end
+-------------------------------------------------------------------
+
+-------------------------------------------------------------------
 local Connection = ut.class() do
+
+local function on_write_handler(cli, err, self)
+  if err then
+    if err ~= EOF then
+      self._ee:emit('error', err)
+    end
+    self:_close(err)
+  end
+end
 
 function Connection:__init(opt)
   if type(opt) == 'string' then
@@ -87,21 +131,18 @@ function Connection:__init(opt)
   self._ready            = false
   self._ee               = EventEmitter.new{self=self}
 
-  local function on_write_error(cli, err)
-    if err then
-      if err ~= EOF then
-        self._ee:emit('error', err)
-      end
-      self:close(err)
+  if opt.reconnect then
+    local interval = 30
+    if type(opt.reconnect) == 'number' then
+      interval = opt.reconnect * 1000
     end
+    self._reconnect_interval = interval
   end
-
-  self._on_write_handler = on_write_error
 
   self._stream
   :on_command(function(s, data, cb)
     if self._ready then
-      return self._cnn:write(data, on_write_error)
+      return self._cnn:write(data, on_write_handler, self)
     end
     if self._cnn then
       self._delay_q:push(data)
@@ -110,7 +151,7 @@ function Connection:__init(opt)
     error('Can not execute command on closed client', 3)
   end)
   :on_halt(function(s, err)
-    self:close(err)
+    self:_close(err)
     if err ~= EOF then
       self._ee:emit('error', err)
     end
@@ -139,7 +180,7 @@ local function on_ready(self, ...)
   while true do
     local data = self._delay_q:pop()
     if not data then break end
-    self._cnn:write(data, self._on_write_handler)
+    self._cnn:write(data, on_write_handler, self)
   end
 
   while self._ready do
@@ -148,6 +189,10 @@ local function on_ready(self, ...)
     cb(self, ...)
   end
 end
+
+local on_reconnect  = function(self, ...) self._ee:emit('reconnect',  ...) end
+
+local on_disconnect = function(self, ...) self._ee:emit('disconnect', ...) end
 
 function Connection:open(cb)
   if self._ready then
@@ -168,7 +213,7 @@ function Connection:open(cb)
   local ok, err = uv.tcp():connect(self._host, self._port, function(cli, err)
     if err then
       self._ee:emit('error', err)
-      return self:close(err)
+      return self:_close(err)
     end
 
     self._ee:emit('open')
@@ -182,7 +227,7 @@ function Connection:open(cb)
 
     -- send out init command
     for _, data in ipairs(cmd) do
-      cli:write(data, self._on_write_handler)
+      cli:write(data, on_write_handler, self)
     end
   end)
 
@@ -191,6 +236,14 @@ function Connection:open(cb)
   self._cnn     = ok
   self._open_q  = ut.Queue.new()
   self._close_q = ut.Queue.new()
+
+  if self._reconnect_interval and not self._reconnect then
+    self._reconnect = AutoReconnect(self,
+      self._reconnect_interval,
+      on_reconnect,
+      on_disconnect
+    )
+  end
 
   if cb then
     self._open_q:push(cb)
@@ -207,7 +260,7 @@ function Connection:open(cb)
         if err then
           called = true
           self._ee:emit('error', err)
-          return self:close(err)
+          return self:_close(err)
         end
 
         if last then on_ready(self, err, ...) end
@@ -229,7 +282,15 @@ function Connection:open(cb)
   return self
 end
 
-function Connection:close(err, cb)
+function Connection:close(...)
+  if self._reconnect then
+    self._reconnect:close()
+    self._reconnect = nil
+  end
+  return self:_close(...)
+end
+
+function Connection:_close(err, cb)
   if type(err) == 'function' then
     cb, err = err
   end
@@ -242,9 +303,7 @@ function Connection:close(err, cb)
   if cb then self._close_q:push(cb) end
 
   if not (self._cnn:closed() or self._cnn:closing()) then
-    local err = err
     self._cnn:close(function()
-
       -- we can not use same queues because callback can
       -- call `open` again and put new callback to `next` connection
       local open_q, close_q  = self._open_q, self._close_q

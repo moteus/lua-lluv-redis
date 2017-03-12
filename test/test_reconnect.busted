@@ -19,7 +19,7 @@ loop.set_timeout(5)
 
 loop.set_traceback(stp and stp.stacktrace or debug.traceback)
 
-describe('lluv.Redis reconnect test', function()
+describe('lluv.Redis reopen test', function()
   local redis, host, port
 
   it('should open from open callback', function(done) async()
@@ -181,6 +181,61 @@ describe('lluv.Redis reconnect test', function()
 
   after_each(function(done) async()
     if redis then
+      redis:close(function()
+        loop.verify_after()
+        done(ctx)
+      end)
+      redis = nil
+    else
+      done(ctx)
+    end
+  end)
+
+end)
+
+describe('lluv.Redis auto reconnect test', function()
+  local redis, host, port
+  
+  local ECONNRESET = uv.error('LIBUV', uv.ECONNRESET)
+
+  it('should not connect by self', function(done) async()
+    uv.timer():start(1500, function()
+      assert.truthy(redis:closed())
+      done()
+    end)
+  end)
+
+  it('should reconnect', function(done) async()
+    redis:open(function(self, err) assert_nil(err)
+      -- take a time to call all events
+      uv.timer():start(100, function()
+        redis:on('close', function(_, _, err)
+          assert.equal(ECONNRESET, err)
+        end)
+
+        redis:on('ready', function()
+          done()
+        end)
+
+        uv.defer(function() -- simulate disconnect
+          self:_close(ECONNRESET)
+        end)
+      end)
+    end)
+  end)
+
+  before_each(function(done) async()
+    redis = Redis.Connection.new{
+      server = url;
+      reconnect = 1;
+    }
+    host, port = redis._host, redis._port
+    done()
+  end)
+
+  after_each(function(done) async()
+    if redis then
+      redis:removeAllListeners()
       redis:close(function()
         loop.verify_after()
         done(ctx)
