@@ -66,13 +66,58 @@ it("on_command callback signature", function()
   local f = false
   stream:on_command(function(...)
     f = true
-    local n, a, b, c = nreturn(...)
-    assert_equal(2, n)
+    local n, a, b, c, d = nreturn(...)
+    assert_equal(4, n)
     assert_equal(stream, a)
+    assert_equal(1, c)
+    assert_equal(PASS, d)
     if type(b) ~= "string" then assert_table(b) end
   end)
 
   stream:command("PING", PASS)
+  assert_true(f)
+end)
+
+it("on_command callback signature for single command pipeline", function()
+  local f = false
+  stream:on_command(function(...)
+    f = true
+    local n, a, b, c, d = nreturn(...)
+    assert_equal(4, n)
+    assert_equal(stream, a)
+    assert_equal(1, c)
+    assert_equal(PASS, d)
+    if type(b) ~= "string" then assert_table(b) end
+  end)
+
+  local cmd1, task1 = stream:pipeline_command({"ECHO", "HELLO"}, PASS)
+
+  stream:pipeline({cmd1}, {task1})
+
+  assert_true(f)
+end)
+
+it("on_command callback signature for multi command pipeline", function()
+  local f = false
+
+  stream:on_command(function(...)
+    f = true
+    local n, a, b, c, d = nreturn(...)
+    assert_equal(4, n)
+    assert_equal(stream, a)
+    assert_equal(2, c)
+    assert_table(d)
+    assert_equal(2, #d)
+    assert_equal(PASS, d[1][1])
+    assert_equal(PASS, d[2][1])
+    if type(b) ~= "string" then assert_table(b) end
+  end)
+
+  local cmd1, task1 = stream:pipeline_command({"ECHO", "HELLO"}, PASS)
+  local cmd2, task2 = stream:pipeline_command({"ECHO", "WORLD"}, PASS)
+
+  stream:pipeline({cmd1, cmd2}, {task1, task2})
+
   assert_true(f)
 end)
 
