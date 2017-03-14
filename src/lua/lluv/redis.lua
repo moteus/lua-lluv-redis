@@ -58,6 +58,8 @@ local function is_callable(f)
   return (type(f) == 'function') and f
 end
 
+local EQUEUE = RedisStream.error(-2, 'EQUEUE', 'Command queue overflow')
+
 -------------------------------------------------------------------
 -- create monitoring timer to be able to reconnect redis connection
 -- close this timer before close connection object
@@ -105,6 +107,49 @@ local function on_write_handler(cli, err, self)
   end
 end
 
+local function on_redis_command(self, data, n, cb)
+
+  if self._max_queue_size then
+    local pending = self._stream._queue:size() + n
+    if pending > self._max_queue_size then
+      if n == 1 then
+        uv.defer(cb, self, EQUEUE)
+      else
+        local t = {} for i = 1, n do t[i] = cb[i][1] end
+        uv.defer(function()
+          for i = 1, n do
+            t[i](self, EQUEUE)
+          end
+        end)
+      end
+      self._ee:emit('overflow')
+      return false
+    end
+  end
+
+  if self._ready then
+    return self._cnn:write(data, on_write_handler, self)
+  end
+
+  if self._cnn then
+    self._delay_q:push(data)
+    return true
+  end
+
+  error('Can not execute command on closed client', 3)
+end
+
+local function on_redis_halt(self, err)
+  self:_close(err)
+  if err ~= EOF then
+    self._ee:emit('error', err)
+  end
+end
+
+local function on_redis_message(self, ...)
+  self._ee:emit(...)
+end
+
 function Connection:__init(opt)
   if type(opt) == 'string' then
     opt = {server = opt}
@@ -130,6 +175,7 @@ function Connection:__init(opt)
   self._delay_q          = ut.Queue.new()
   self._ready            = false
   self._ee               = EventEmitter.new{self=self}
+  self._max_queue_size   = opt.max_queue_size
 
   if opt.reconnect then
     local interval = 30
@@ -140,25 +186,9 @@ function Connection:__init(opt)
   end
 
   self._stream
-  :on_command(function(s, data, cb)
-    if self._ready then
-      return self._cnn:write(data, on_write_handler, self)
-    end
-    if self._cnn then
-      self._delay_q:push(data)
-      return true
-    end
-    error('Can not execute command on closed client', 3)
-  end)
-  :on_halt(function(s, err)
-    self:_close(err)
-    if err ~= EOF then
-      self._ee:emit('error', err)
-    end
-  end)
-  :on_message(function(_, ...)
-    self._ee:emit(...)
-  end)
+    :on_command(on_redis_command)
+    :on_halt(on_redis_halt)
+    :on_message(on_redis_message)
 
   return self
 end

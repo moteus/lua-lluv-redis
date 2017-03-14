@@ -527,7 +527,7 @@ function RedisCmdStream:command(cmd, cb, decoder)
   end
 
   local cmd, cmd_name = self:encode_command(cmd)
-  if self._on_command(self._self, cmd) then
+  if self._on_command(self._self, cmd, 1, cb) then
     self._queue:push{cb, nil, nil, cmd_name, decoder or pass, count}
   end
   return self._self
@@ -541,17 +541,26 @@ function RedisCmdStream:pipeline_command(cmd, cb, decoder)
 end
 
 function RedisCmdStream:pipeline(cmd, tasks, multiple)
-  if self:_on_command(flat(cmd)) then
+  local n, ok = #tasks
+
+  if n == 1 then
+    ok = self._on_command(self._self, flat(cmd), 1, tasks[1][1])
+  else
+    ok = self._on_command(self._self, flat(cmd), n, tasks)
+  end
+
+  if ok then
     if multiple then
-      for i = 1, #tasks do
+      for i = 1, n do
         self._queue:push(iclone(tasks[i], 5))
       end
     else
-      for i = 1, #tasks do
+      for i = 1, n do
         self._queue:push(tasks[i])
       end
     end
   end
+
   return self
 end
 
