@@ -1,27 +1,18 @@
 language: c
 
 sudo: false
-
 matrix:
   include:
-    - compiler: ": Lua51"
-      env: LUA="lua 5.1"
+    - env: LUA="lua 5.1"
       os: linux
-    - compiler: ": Lua52"
-      env: LUA="lua 5.2"
+    - env: LUA="lua 5.2"
       os: linux
-    - compiler: ": Lua53"
-      env: LUA="lua 5.3"
+    - env: LUA="lua 5.3"
       os: linux
-    - compiler: ": LuaJIT20"
-      env: LUA="luajit 2.0"
+    - env: LUA="luajit 2.0"
       os: linux
-    - compiler: ": LuaJIT21"
-      env: LUA="luajit 2.1"
+    - env: LUA="luajit 2.1"
       os: linux
-    # - compiler: ": Lua51-osx"
-    #   env: LUA="lua 5.1"
-    #   os: osx
 
 services:
   - redis-server
@@ -50,6 +41,7 @@ install:
   - luarocks make rockspecs/lluv-redis-scm-0.rockspec 
 
 before_script:
+  - luarocks show penlight         > /dev/null 2>&1 || luarocks install penlight
   - luarocks show lua_cliargs      > /dev/null 2>&1 || luarocks install lua_cliargs 2.5
   - luarocks show stacktraceplus   > /dev/null 2>&1 || luarocks install stacktraceplus
   - luarocks show lua-curl         > /dev/null 2>&1 || luarocks install lua-curl
