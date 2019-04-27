@@ -20,6 +20,7 @@ local function ocall(fn, ...) if fn then return fn(...) end end
 
 local EOF        = uv.error("LIBUV", uv.EOF)
 local ENOTCONN   = uv.error('LIBUV', uv.ENOTCONN)
+local ECANCELED  = uv.error('LIBUV', uv.ECANCELED)
 local EAI_NONAME = uv.error('LIBUV', uv.EAI_NONAME)
 
 local function nil_if_empty(t)
@@ -226,8 +227,14 @@ local on_reconnect  = function(self, ...) self._ee:emit('reconnect',  ...) end
 local on_disconnect = function(self, ...) self._ee:emit('disconnect', ...) end
 
 local params = {family = "inet"; socktype = "stream"; protocol = "tcp"}
+
 local function tcp_connect(host, port, cb)
-  return uv.getaddrinfo(host, port, params, function(_, err, records)
+  local cnn, err = uv.tcp()
+  if not cnn then
+    return nil, err
+  end
+
+  local ok, err = uv.getaddrinfo(host, port, params, function(_, err, records)
     if err then return cb(nil, err) end
 
     local address, port
@@ -235,11 +242,23 @@ local function tcp_connect(host, port, cb)
       address, port = records[1].address, records[1].port or self._port
     end
 
-    -- Not sure how to handle this case
-    if not address then return cb(nil, EAI_NONAME) end
-    
-    return uv.tcp():connect(address, port, cb)
+    if cnn:closed() or cnn:closing() then
+      return cb(nil, ECANCELED)
+    end
+
+    if not address then
+      return cb(nil, EAI_NONAME)
+    end
+
+    return cnn:connect(address, port, cb)
   end)
+
+  if not ok then
+    cnn:close()
+    return nil, err
+  end
+
+  return cnn
 end
 
 function Connection:open(cb)
@@ -258,7 +277,7 @@ function Connection:open(cb)
 
   local cmd -- Init command
 
-  local ok, err = tcp_connect(self._host, self._port, function(cli, err)
+  local cnn, err = tcp_connect(self._host, self._port, function(cli, err)
     if err then
       self._ee:emit('error', err)
       return self:_close(err)
@@ -279,9 +298,9 @@ function Connection:open(cb)
     end
   end)
 
-  if not ok then return nil, err end
+  if not cnn then return nil, err end
 
-  self._cnn     = ok
+  self._cnn     = cnn
   self._open_q  = ut.Queue.new()
   self._close_q = ut.Queue.new()
 

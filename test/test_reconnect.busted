@@ -262,6 +262,12 @@ describe('lluv.Redis dns resolve test', function()
     redis:open(function(_, err) assert.not_nil(err) done() end)
   end)
 
+  it('should cancel dns resolve', function(done) async()
+    redis = Redis.Connection.new{server = url}
+    redis:open(function(_, err) assert.is_nil(err) done() end)
+    redis:close()
+  end)
+
   before_each(function(done) async()
     done()
   end)
