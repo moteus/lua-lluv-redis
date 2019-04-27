@@ -2,7 +2,7 @@
 --
 --  Author: Alexey Melnichuk <alexeymelnichuck@gmail.com>
 --
---  Copyright (C) 2015 Alexey Melnichuk <alexeymelnichuck@gmail.com>
+--  Copyright (C) 2015-2019 Alexey Melnichuk <alexeymelnichuck@gmail.com>
 --
 --  Licensed according to the included 'LICENSE' document
 --
@@ -18,8 +18,9 @@ local EventEmitter   = require "EventEmitter"
 
 local function ocall(fn, ...) if fn then return fn(...) end end
 
-local EOF      = uv.error("LIBUV", uv.EOF)
-local ENOTCONN = uv.error('LIBUV', uv.ENOTCONN)
+local EOF        = uv.error("LIBUV", uv.EOF)
+local ENOTCONN   = uv.error('LIBUV', uv.ENOTCONN)
+local EAI_NONAME = uv.error('LIBUV', uv.EAI_NONAME)
 
 local function nil_if_empty(t)
   if t and #t == 0 then return nil end
@@ -224,6 +225,23 @@ local on_reconnect  = function(self, ...) self._ee:emit('reconnect',  ...) end
 
 local on_disconnect = function(self, ...) self._ee:emit('disconnect', ...) end
 
+local params = {family = "inet"; socktype = "stream"; protocol = "tcp"}
+local function tcp_connect(host, port, cb)
+  return uv.getaddrinfo(host, port, params, function(_, err, records)
+    if err then return cb(nil, err) end
+
+    local address, port
+    if records[1] then
+      address, port = records[1].address, records[1].port or self._port
+    end
+
+    -- Not sure how to handle this case
+    if not address then return cb(nil, EAI_NONAME) end
+    
+    return uv.tcp():connect(address, port, cb)
+  end)
+end
+
 function Connection:open(cb)
   if self._ready then
     uv.defer(cb, self)
@@ -240,7 +258,7 @@ function Connection:open(cb)
 
   local cmd -- Init command
 
-  local ok, err = uv.tcp():connect(self._host, self._port, function(cli, err)
+  local ok, err = tcp_connect(self._host, self._port, function(cli, err)
     if err then
       self._ee:emit('error', err)
       return self:_close(err)

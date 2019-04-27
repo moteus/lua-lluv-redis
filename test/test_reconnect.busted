@@ -183,11 +183,11 @@ describe('lluv.Redis reopen test', function()
     if redis then
       redis:close(function()
         loop.verify_after()
-        done(ctx)
+        done()
       end)
       redis = nil
     else
-      done(ctx)
+      done()
     end
   end)
 
@@ -238,11 +238,43 @@ describe('lluv.Redis auto reconnect test', function()
       redis:removeAllListeners()
       redis:close(function()
         loop.verify_after()
-        done(ctx)
+        done()
       end)
       redis = nil
     else
-      done(ctx)
+      done()
+    end
+  end)
+
+end)
+
+describe('lluv.Redis dns resolve test', function()
+  local redis, host, port
+  local url = 'redis://localhost/12'
+
+  it('should connect using host name', function(done) async()
+    redis = Redis.Connection.new{server = url}
+    redis:open(function(_, err) assert.is_nil(err) done() end)
+  end)
+
+  it('should fail with invalid name', function(done) async()
+    redis = Redis.Connection.new{server = 'redis://not_real_host/12'}
+    redis:open(function(_, err) assert.not_nil(err) done() end)
+  end)
+
+  before_each(function(done) async()
+    done()
+  end)
+
+  after_each(function(done) async()
+    if redis then
+      redis:close(function()
+        loop.verify_after()
+        done()
+      end)
+      redis = nil
+    else
+      done()
     end
   end)
 
