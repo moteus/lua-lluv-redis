@@ -16,6 +16,11 @@ local RedisStream    = require "lluv.redis.stream"
 local RedisCommander = require "lluv.redis.commander"
 local EventEmitter   = require "EventEmitter"
 
+local _VERSION   = "0.1.0"
+local _NAME      = "lluv-redis"
+local _LICENSE   = "MIT"
+local _COPYRIGHT = "Copyright (C) 2015-2019 Alexey Melnichuk"
+
 local function ocall(fn, ...) if fn then return fn(...) end end
 
 local EOF        = uv.error("LIBUV", uv.EOF)
@@ -446,4 +451,9 @@ end
 
 return {
   Connection = Connection;
+
+  _VERSION   = _VERSION;
+  _NAME      = _NAME;
+  _LICENSE   = _LICENSE;
+  _COPYRIGHT = _COPYRIGHT;
 }

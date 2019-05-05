@@ -51,6 +51,7 @@ before_script:
 
 script: 
   - cd test
+  - lua      test_load.lua
   - lunit.sh test_stream.lua
   - lunit.sh test_commander.lua
   - lunit.sh test_redis.lua
