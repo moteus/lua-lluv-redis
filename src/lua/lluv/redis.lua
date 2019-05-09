@@ -16,7 +16,7 @@ local RedisStream    = require "lluv.redis.stream"
 local RedisCommander = require "lluv.redis.commander"
 local EventEmitter   = require "EventEmitter"
 
-local _VERSION   = "0.1.0"
+local _VERSION   = "0.1.1-dev"
 local _NAME      = "lluv-redis"
 local _LICENSE   = "MIT"
 local _COPYRIGHT = "Copyright (C) 2015-2019 Alexey Melnichuk"
