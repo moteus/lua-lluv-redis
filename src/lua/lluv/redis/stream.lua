@@ -14,6 +14,8 @@ local ut = require "lluv.utils"
 
 local unpack = unpack or table.unpack
 
+local meta = getmetatable
+
 local monitoring_pattern = '^%d+%.%d+ %[%d+ (%S-)%] "(%S-)"%s*(.*)$'
 
 local function is_monitor_message(msg)
@@ -52,19 +54,24 @@ function RedisError:__tostring()
 end
 
 function RedisError:__eq(lhs)
-  return getmetatable(lhs) == RedisError
+  return meta(lhs) == RedisError
     and self:no()   == lhs:no()
     and self:name() == lhs:name()
 end
 
 end
 
-local meta = getmetatable
 local function IsRedisError(obj)
   return meta(obj) == RedisError
 end
 
-local EPROTO = -1
+local function IsRedisServerError(obj)
+  return IsRedisError(obj) and (obj:no() == 0)
+end
+
+local EPROTO  = -1
+local EQUEUE  = -2
+local EDISCARD = -3
 
 local function RedisError_EPROTO(desc)
   return RedisError.new(EPROTO, "EPROTO", "Protocol error", desc)
@@ -72,6 +79,24 @@ end
 
 local function RedisError_SERVER(name, msg, cmd)
   return RedisError.new(0, name, msg or '', cmd)
+end
+
+local EQUEUE_error
+
+local function RedisError_EQUEUE()
+  if not EQUEUE_error then
+    EQUEUE_error = RedisError.new(EQUEUE, 'EQUEUE', 'Command queue overflow')
+  end
+  return EQUEUE_error
+end
+
+local EDISCARD_error
+
+local function RedisError_EDISCARD()
+  if not EDISCARD_error then
+    EDISCARD_error = RedisError.new(EDISCARD, 'EDISCARD', 'Command queue overflow')
+  end
+  return EDISCARD_error
 end
 
 local RedisCmdStream = ut.class() do
@@ -298,7 +323,7 @@ function RedisCmdStream:_next_data_task()
             while true do
               local task = self._txn:pop()
               if not task then break end
-              task[CB](self._self, task[DECODER]('DISCARD'))
+              task[CB](self._self, task[DECODER](RedisError_EDISCARD()))
             end
           elseif task[CMD] == 'MONITOR' then
             self._monitoring = true
@@ -626,7 +651,11 @@ end
 end
 
 return {
-  new          = RedisCmdStream.new;
-  error        = RedisError.new;
-  IsError      = IsRedisError;
+  new           = RedisCmdStream.new;
+  error         = RedisError.new;
+  IsError       = IsRedisError;
+  IsServerError = IsRedisServerError;
+  EPROTO        = RedisError_EPROTO();
+  EQUEUE        = RedisError_EQUEUE();
+  EDISCARD      = RedisError_EDISCARD();
 }

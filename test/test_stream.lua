@@ -5,6 +5,7 @@ pcall(require, "luacov")
 local RedisStream = require "lluv.redis.stream"
 local utils       = require "utils"
 local TEST_CASE   = require "lunit".TEST_CASE
+local EDISCARD    = RedisStream.EDISCARD
 
 local pcall, error, type, table, tostring, print, debug = pcall, error, type, table, tostring, print, debug
 local RUN = utils.RUN
@@ -738,12 +739,12 @@ it('should call all callbacks on discard', function()
 
   stream:command("INCR foo", function(self, err, res)
     called = assert_equal(1, called) + 1
-    assert_equal("DISCARD", err)
+    assert_equal(EDISCARD, err)
   end)
 
   stream:command("INCR bar", function(self, err, res)
     called = assert_equal(2, called) + 1
-    assert_equal("DISCARD", err)
+    assert_equal(EDISCARD, err)
   end)
 
   stream:command("DISCARD", function(self, err, res)
@@ -804,7 +805,7 @@ it('should ingnore failed commands', function()
   end)
 
   stream:command("INCR foo", function(self, err, res)
-    assert_equal("DISCARD", err)
+    assert_equal(EDISCARD, err)
   end)
 
   stream:command({"INCR", "a", "b", "c"}, function(self, err, res)

@@ -27,6 +27,7 @@ local EOF        = uv.error("LIBUV", uv.EOF)
 local ENOTCONN   = uv.error('LIBUV', uv.ENOTCONN)
 local ECANCELED  = uv.error('LIBUV', uv.ECANCELED)
 local EAI_NONAME = uv.error('LIBUV', uv.EAI_NONAME)
+local EQUEUE     = RedisStream.EQUEUE
 
 local function nil_if_empty(t)
   if t and #t == 0 then return nil end
@@ -64,8 +65,6 @@ end
 local function is_callable(f)
   return (type(f) == 'function') and f
 end
-
-local EQUEUE = RedisStream.error(-2, 'EQUEUE', 'Command queue overflow')
 
 -------------------------------------------------------------------
 -- create monitoring timer to be able to reconnect redis connection
