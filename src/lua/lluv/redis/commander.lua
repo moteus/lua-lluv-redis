@@ -36,7 +36,7 @@ local function nkeys(n)
   return function(...)
     local args, cb = pack_args(...)
     if type(args[n]) == 'table' then
-      table.insert(args, n, tostring(#args[3]))
+      table.insert(args, n, tostring(#args[n]))
     end
     return args, cb
   end
